@@ -1,0 +1,275 @@
+:root {
+  color: #dffbff;
+  background: transparent;
+  font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: geometricPrecision;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+.compact-shell {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
+
+.orb-button {
+  width: 104px;
+  height: 126px;
+  padding: 7px 8px 9px;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 7px;
+  border: 1px solid rgba(75, 217, 245, 0.34);
+  border-radius: 26px;
+  background: linear-gradient(145deg, rgba(8, 23, 31, 0.96), rgba(3, 10, 15, 0.92));
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.44), inset 0 0 24px rgba(45, 194, 226, 0.08);
+  cursor: pointer;
+}
+
+.orb-button:focus-visible,
+.command-form input:focus-visible,
+.command-form button:focus-visible {
+  outline: 2px solid #8eeeff;
+  outline-offset: 2px;
+}
+
+.orb-assembly {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  display: grid;
+  place-items: center;
+}
+
+.orb-ring,
+.orb-core {
+  position: absolute;
+  border-radius: 50%;
+}
+
+.orb-ring-outer {
+  inset: 0;
+  border: 1px solid rgba(88, 224, 250, 0.72);
+  box-shadow: 0 0 16px rgba(54, 204, 235, 0.28);
+}
+
+.orb-ring-inner {
+  inset: 9px;
+  border: 2px solid rgba(177, 246, 255, 0.58);
+  border-left-color: rgba(18, 103, 127, 0.35);
+  transform: rotate(-24deg);
+}
+
+.orb-core {
+  width: 40px;
+  height: 40px;
+  background: radial-gradient(circle at 44% 35%, #f6ffff 0 5%, #72e9ff 22%, #1489aa 58%, #062532 100%);
+  box-shadow: 0 0 15px rgba(87, 224, 251, 0.74), inset 0 0 8px #d8fbff;
+}
+
+.orb-assembly[data-state="THINKING"] .orb-ring-outer,
+.orb-assembly[data-state="RESPONDING"] .orb-ring-outer {
+  animation: orbit-pulse 1s ease-in-out infinite alternate;
+}
+
+.orb-assembly[data-state="OFFLINE"] {
+  filter: grayscale(0.8);
+  opacity: 0.56;
+}
+
+.orb-status {
+  color: #82dcef;
+  font-family: Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+}
+
+.panel-shell {
+  width: 100%;
+  height: 100%;
+  padding: 19px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 16px;
+  border: 1px solid rgba(92, 218, 240, 0.38);
+  border-radius: 24px;
+  background:
+    linear-gradient(rgba(46, 176, 203, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(46, 176, 203, 0.035) 1px, transparent 1px),
+    linear-gradient(150deg, rgba(8, 25, 34, 0.98), rgba(3, 10, 15, 0.985));
+  background-size: 24px 24px, 24px 24px, auto;
+  box-shadow: inset 0 0 42px rgba(34, 166, 194, 0.08), 0 24px 60px rgba(0, 0, 0, 0.48);
+}
+
+.panel-header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+}
+
+.orb-inline .orb-assembly {
+  width: 50px;
+  height: 50px;
+}
+
+.orb-inline .orb-ring-inner {
+  inset: 7px;
+}
+
+.orb-inline .orb-core {
+  width: 27px;
+  height: 27px;
+}
+
+.eyebrow,
+.panel-header h1,
+.response-panel p {
+  margin: 0;
+}
+
+.eyebrow,
+.response-label {
+  color: #5ea6b7;
+  font-family: Consolas, monospace;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+}
+
+.panel-header h1 {
+  margin-top: 3px;
+  color: #effeff;
+  font-size: 16px;
+  font-weight: 580;
+  letter-spacing: 0.025em;
+}
+
+.status-chip {
+  padding: 6px 8px;
+  border: 1px solid rgba(76, 211, 235, 0.36);
+  border-radius: 999px;
+  color: #85e6f8;
+  background: rgba(19, 105, 123, 0.14);
+  font-family: Consolas, monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.status-chip[data-state="OFFLINE"] {
+  color: #ff9c91;
+  border-color: rgba(255, 118, 101, 0.4);
+}
+
+.response-panel {
+  min-height: 0;
+  padding: 17px;
+  border: 1px solid rgba(69, 177, 200, 0.2);
+  border-radius: 15px;
+  background: rgba(2, 11, 16, 0.72);
+  overflow: auto;
+}
+
+.response-panel p {
+  margin-top: 11px;
+  color: #d9f9fc;
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.error-text {
+  display: block;
+  margin-top: 12px;
+  color: #ff9c91;
+  font-size: 11px;
+}
+
+.command-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.command-form label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.command-form input,
+.command-form button {
+  min-height: 42px;
+  border: 1px solid rgba(77, 198, 222, 0.27);
+  border-radius: 11px;
+}
+
+.command-form input {
+  min-width: 0;
+  padding: 0 13px;
+  color: #e6fcff;
+  background: rgba(2, 12, 17, 0.86);
+}
+
+.command-form input::placeholder {
+  color: #527985;
+}
+
+.command-form button {
+  padding: 0 16px;
+  color: #081218;
+  background: #73ddf0;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.command-form input:disabled,
+.command-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+@keyframes orbit-pulse {
+  from {
+    transform: scale(0.96);
+    box-shadow: 0 0 11px rgba(54, 204, 235, 0.22);
+  }
+  to {
+    transform: scale(1.03);
+    box-shadow: 0 0 24px rgba(88, 226, 252, 0.52);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb-ring-outer {
+    animation: none !important;
+  }
+}

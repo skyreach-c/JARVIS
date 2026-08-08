@@ -1,0 +1,8 @@
+[source.crates-io]
+replace-with = "ustc"
+
+[source.ustc]
+registry = "sparse+https://ipv4.mirrors.ustc.edu.cn/crates.io-index/"
+
+[registries.ustc]
+index = "sparse+https://ipv4.mirrors.ustc.edu.cn/crates.io-index/"

@@ -1,0 +1,13 @@
+apps/desktop/node_modules/
+apps/desktop/dist/
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+core/.venv/
+core/.pytest_cache/
+core/.ruff_cache/
+core/src/*.egg-info/
+**/__pycache__/
+*.py[cod]
+.idea/
+.vscode/
+.tmp/
