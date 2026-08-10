@@ -11,3 +11,10 @@ core/src/*.egg-info/
 .idea/
 .vscode/
 .tmp/
+.env
+.env.*
+!.env.example
+memory.db
+memory.db-journal
+memory.db-shm
+memory.db-wal

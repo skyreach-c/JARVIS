@@ -1,6 +1,6 @@
 # JARVIS
 
-JARVIS v0.1 的第一轮只实现一个最小端到端心跳：Tauri 管理 Python Core，React 通过本机 WebSocket 完成一次带状态变化的固定分片回复。
+JARVIS 是一个由 Tauri/React 桌面端和 Python Core 组成的本机个人 AI 助手。当前已封版基线为 v0.4C.2，具备 DeepSeek 流式聊天、Personality、进程内 Session Context、SQLite Pinned Long-term Memory，以及具有副作用安全边界的 Natural Memory Router。
 
 ## 开发命令
 
@@ -11,20 +11,21 @@ JARVIS v0.1 的第一轮只实现一个最小端到端心跳：Tauri 管理 Pyth
 
 `dev.ps1` 是开发阶段的唯一启动入口。它只启动 Tauri；Python Core 由 Tauri 自动启动和停止。
 
+首次使用前，在项目根目录 `.env` 的 `DEEPSEEK_API_KEY=` 后填写本地 Key。不要把 `.env` 提交到 Git。
+
 运行全部自动检查：
 
 ```powershell
 .\scripts\check.ps1
 ```
 
-当前范围与协议见 `docs/architecture.md`，关键决策见 `docs/decisions.md`。
+文档入口：
 
-## Windows 人工验收
+- 版本、问题、改进与验收总账：[`docs/milestones.md`](docs/milestones.md)
+- 用户可见变化：[`CHANGELOG.md`](CHANGELOG.md)
+- 架构决策：[`docs/decisions.md`](docs/decisions.md)
+- 初始协议与架构：[`docs/architecture.md`](docs/architecture.md)
 
-1. 运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1`。
-2. 确认 Tauri 自动启动后，Orb 显示 `IDLE`。
-3. 点击 Orb，在展开面板中输入任意消息并发送。
-4. 依次确认 `THINKING`、`RESPONDING`、分片回复和 `IDLE`。
-5. 修改 `core/src/jarvis_core/conversation.py` 中的固定回复，重新运行并确认 UI 内容随之变化。
-6. 关闭 JARVIS 窗口，确认 Python Core 同时退出。
-7. 在无网络、无 API Key 的条件下重复一次发送，确认闭环仍然成立。
+## 版本记录
+
+每个里程碑在人工验收后都会更新版本总账和 Changelog。已封版版本的详细人工验收场景、已知限制和安全边界以 `docs/milestones.md` 为准。

@@ -77,8 +77,20 @@ impl CoreProcessManager {
     }
 
     fn start_with_python(python: impl AsRef<Path>) -> Result<Self, String> {
+        Self::start_with_python_config(python.as_ref(), None)
+    }
+
+    #[cfg(test)]
+    fn start_with_python_and_data_dir(
+        python: impl AsRef<Path>,
+        data_dir: impl AsRef<Path>,
+    ) -> Result<Self, String> {
+        Self::start_with_python_config(python.as_ref(), Some(data_dir.as_ref()))
+    }
+
+    fn start_with_python_config(python: &Path, data_dir: Option<&Path>) -> Result<Self, String> {
         let token = Uuid::new_v4().to_string();
-        let mut command = Command::new(python.as_ref());
+        let mut command = Command::new(python);
         command
             .arg("-m")
             .arg("jarvis_core")
@@ -86,6 +98,10 @@ impl CoreProcessManager {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+
+        if let Some(data_dir) = data_dir {
+            command.env("JARVIS_DATA_DIR", data_dir);
+        }
 
         #[cfg(windows)]
         command.creation_flags(0x0800_0000);
@@ -316,6 +332,7 @@ fn set_startup_status(startup: &StartupSignal, status: StartupStatus) {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::path::PathBuf;
     use std::process::Command;
     use std::sync::{Arc, Condvar, Mutex};
@@ -325,6 +342,25 @@ mod tests {
 
     fn core_python() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../core/.venv/Scripts/python.exe")
+    }
+
+    struct TestDataDir {
+        path: PathBuf,
+    }
+
+    impl TestDataDir {
+        fn unique() -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("jarvis-rust-memory-test-{}", uuid::Uuid::new_v4()));
+            fs::create_dir_all(&path).expect("temporary JARVIS data directory");
+            Self { path }
+        }
+    }
+
+    impl Drop for TestDataDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
     }
 
     #[test]
@@ -378,9 +414,11 @@ mod tests {
     }
 
     #[test]
-    fn starts_core_completes_heartbeat_and_reaps_it() {
-        let manager = CoreProcessManager::start_with_python(core_python())
-            .expect("Python Core should start from the bootstrap virtual environment");
+    fn starts_core_authenticates_and_reaps_it() {
+        let data_dir = TestDataDir::unique();
+        let manager =
+            CoreProcessManager::start_with_python_and_data_dir(core_python(), &data_dir.path)
+                .expect("Python Core should start from the bootstrap virtual environment");
 
         let connection = manager
             .wait_for_connection(Duration::from_secs(10))
@@ -391,6 +429,7 @@ mod tests {
         assert_eq!(connection.protocol_version, 1);
         assert!(!connection.token.is_empty());
         assert!(manager.is_running());
+        assert!(data_dir.path.join("memory.db").is_file());
 
         let probe = r#"
 import asyncio
@@ -403,7 +442,6 @@ from websockets.asyncio.client import connect
 async def main():
     port = int(sys.argv[1])
     token = sys.argv[2]
-    request_id = "rust-e2e-heartbeat"
     async with connect(f"ws://127.0.0.1:{port}") as websocket:
         await websocket.send(json.dumps({
             "version": 1,
@@ -416,26 +454,6 @@ async def main():
             "type": "core.ready",
             "payload": {"state": "IDLE"},
         }
-
-        await websocket.send(json.dumps({
-            "version": 1,
-            "type": "chat.send",
-            "requestId": request_id,
-            "payload": {"text": "heartbeat"},
-        }))
-        events = []
-        while True:
-            event = json.loads(await websocket.recv())
-            events.append(event)
-            if event["type"] == "state.changed" and event["payload"] == {"state": "IDLE"}:
-                break
-
-        assert events[0]["payload"] == {"state": "THINKING"}
-        assert events[1]["payload"] == {"state": "RESPONDING"}
-        assert events[-2]["type"] == "chat.completed"
-        assert events[-1]["payload"] == {"state": "IDLE"}
-        assert any(event["type"] == "chat.delta" for event in events)
-        assert all(event["requestId"] == request_id for event in events)
 
 
 asyncio.run(main())

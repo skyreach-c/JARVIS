@@ -6,8 +6,15 @@ from typing import TextIO
 from websockets.asyncio.server import Server, ServerConnection, serve
 
 from jarvis_core.conversation import Conversation
+from jarvis_core.llm.client import LLMError
+from jarvis_core.memory_store import MemoryStoreError
 from jarvis_core.protocol import ProtocolError, build_server_message, parse_client_message
 from jarvis_core.state import JarvisState, JarvisStateMachine
+from jarvis_core.telemetry import (
+    RequestTelemetry,
+    bind_request_telemetry,
+    reset_request_telemetry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -144,13 +151,23 @@ class JarvisCoreServer:
         request_id: str,
         text: str,
     ) -> None:
+        telemetry = RequestTelemetry(request_id)
+        telemetry_token = bind_request_telemetry(telemetry)
+        request_status = "error"
 
         try:
             await self._send_state(websocket, JarvisState.THINKING, request_id)
-            await self._send_state(websocket, JarvisState.RESPONDING, request_id)
 
             chunks: list[str] = []
             async for chunk in self.conversation.stream_reply(text):
+                if not chunk:
+                    continue
+                if not chunks:
+                    await self._send_state(
+                        websocket,
+                        JarvisState.RESPONDING,
+                        request_id,
+                    )
                 chunks.append(chunk)
                 await websocket.send(
                     build_server_message(
@@ -159,6 +176,8 @@ class JarvisCoreServer:
                         request_id=request_id,
                     )
                 )
+                if len(chunks) == 1:
+                    telemetry.record_first_delta()
 
             complete_text = "".join(chunks)
             await websocket.send(
@@ -167,6 +186,50 @@ class JarvisCoreServer:
                     {"text": complete_text},
                     request_id=request_id,
                 )
+            )
+            request_status = "success"
+        except MemoryStoreError as exc:
+            logger.error(
+                "Memory operation failed request_id=%s operation=%s "
+                "code=memory_unavailable error_type=%s",
+                request_id,
+                exc.operation,
+                exc.error_type,
+            )
+            await self._send_best_effort(
+                websocket,
+                build_server_message(
+                    "error",
+                    {
+                        "code": "memory_unavailable",
+                        "message": (
+                            "本地长期记忆暂时不可用，请重启 JARVIS 后重试。"
+                        ),
+                        "retryable": True,
+                    },
+                    request_id=request_id,
+                ),
+            )
+        except LLMError as exc:
+            logger.error(
+                "LLM reply failed request_id=%s provider=%s code=%s status=%s error_type=%s",
+                request_id,
+                exc.provider,
+                exc.code,
+                exc.status_code,
+                exc.error_type,
+            )
+            await self._send_best_effort(
+                websocket,
+                build_server_message(
+                    "error",
+                    {
+                        "code": exc.code,
+                        "message": exc.user_message,
+                        "retryable": exc.retryable,
+                    },
+                    request_id=request_id,
+                ),
             )
         except Exception:
             logger.exception("reply failed for request %s", request_id)
@@ -179,16 +242,22 @@ class JarvisCoreServer:
                 ),
             )
         finally:
-            if self._state.state is not JarvisState.IDLE:
-                self._state.transition(JarvisState.IDLE)
-                await self._send_best_effort(
-                    websocket,
-                    build_server_message(
-                        "state.changed",
-                        {"state": JarvisState.IDLE.value},
-                        request_id=request_id,
-                    ),
-                )
+            try:
+                if self._state.state is not JarvisState.IDLE:
+                    self._state.transition(JarvisState.IDLE)
+                    await self._send_best_effort(
+                        websocket,
+                        build_server_message(
+                            "state.changed",
+                            {"state": JarvisState.IDLE.value},
+                            request_id=request_id,
+                        ),
+                    )
+            finally:
+                try:
+                    telemetry.finish(status=request_status)
+                finally:
+                    reset_request_telemetry(telemetry_token)
 
     async def _send_best_effort(
         self,

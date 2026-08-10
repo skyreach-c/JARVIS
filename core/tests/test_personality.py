@@ -1,0 +1,29 @@
+from jarvis_core.personality import JARVIS_PERSONALITY_INSTRUCTIONS
+from jarvis_core.runtime_capabilities import CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+
+
+def test_personality_and_runtime_capabilities_are_separate_and_non_empty() -> None:
+    assert JARVIS_PERSONALITY_INSTRUCTIONS.strip()
+    assert CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS.strip()
+
+    assert "记忆" not in JARVIS_PERSONALITY_INSTRUCTIONS
+    assert "Memory" not in JARVIS_PERSONALITY_INSTRUCTIONS
+
+    assert "当前" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "Session Context" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "完整成功" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "关闭或重启" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "Pinned Long-term Memory" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "跨" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "普通 Session" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "显式 Forget Memory 命令" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "自然语言" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "实际执行" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "不得声称成功" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "清空全部 Pinned Long-term Memory" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "确认" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "/forget" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "不追溯" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "不保留 Session History" not in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "权限" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "观察" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS

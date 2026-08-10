@@ -1,0 +1,218 @@
+import importlib
+
+
+def telemetry_module():  # type: ignore[no-untyped-def]
+    return importlib.import_module("jarvis_core.telemetry")
+
+
+class ManualClock:
+    def __init__(self) -> None:
+        self.value = 0.0
+
+    def __call__(self) -> float:
+        return self.value
+
+
+def test_llm_summary_records_phase_and_user_perceived_timings_once() -> None:
+    module = telemetry_module()
+    clock = ManualClock()
+    summaries: list[dict[str, object]] = []
+    telemetry = module.RequestTelemetry(
+        "request-1",
+        clock=clock,
+        summary_sink=summaries.append,
+    )
+    telemetry.mark_llm_request(history_turns=2)
+
+    with telemetry.measure_phase(
+        "memory_read_ms",
+        module.FailurePhase.MEMORY_READ,
+    ):
+        clock.value = 0.010
+    with telemetry.measure_phase(
+        "prompt_build_ms",
+        module.FailurePhase.PROMPT_BUILD,
+    ):
+        clock.value = 0.015
+    telemetry.set_llm_context(
+        pinned_memory_count=3,
+        message_count=6,
+        prompt_chars=420,
+    )
+
+    provider_started = telemetry.start_provider()
+    clock.value = 0.115
+    telemetry.record_provider_first_token(provider_started)
+    clock.value = 0.120
+    telemetry.record_first_delta()
+    clock.value = 0.315
+    telemetry.finish_provider(provider_started)
+    clock.value = 0.400
+    telemetry.finish(status="success")
+    telemetry.finish(status="error")
+
+    assert summaries == [
+        {
+            "request_id": "request-1",
+            "status": "success",
+            "request_kind": "llm",
+            "memory_read_ms": 10.0,
+            "prompt_build_ms": 5.0,
+            "provider_first_token_ms": 100.0,
+            "provider_stream_ms": 200.0,
+            "total_llm_ms": 300.0,
+            "first_delta_ms": 120.0,
+            "total_request_ms": 400.0,
+            "history_turns": 2,
+            "pinned_memory_count": 3,
+            "message_count": 6,
+            "prompt_chars": 420,
+        }
+    ]
+
+
+def test_memory_command_summary_has_no_llm_timings() -> None:
+    module = telemetry_module()
+    clock = ManualClock()
+    summaries: list[dict[str, object]] = []
+    telemetry = module.RequestTelemetry(
+        "command-request",
+        clock=clock,
+        summary_sink=summaries.append,
+    )
+    telemetry.mark_memory_command("remember")
+
+    with telemetry.measure_phase(
+        "memory_operation_ms",
+        module.FailurePhase.MEMORY_COMMAND,
+    ):
+        clock.value = 0.020
+    clock.value = 0.025
+    telemetry.record_first_delta()
+    clock.value = 0.030
+    telemetry.finish(status="success")
+
+    assert summaries == [
+        {
+            "request_id": "command-request",
+            "status": "success",
+            "request_kind": "memory_command",
+            "command": "remember",
+            "memory_operation_ms": 20.0,
+            "first_delta_ms": 25.0,
+            "total_request_ms": 30.0,
+        }
+    ]
+    assert not any(
+        key.startswith("provider_") or key == "total_llm_ms"
+        for key in summaries[0]
+    )
+
+
+def test_router_timings_are_optional_and_preserved_on_chat_fallthrough() -> None:
+    module = telemetry_module()
+    clock = ManualClock()
+    summaries: list[dict[str, object]] = []
+    telemetry = module.RequestTelemetry(
+        "router-chat",
+        clock=clock,
+        summary_sink=summaries.append,
+    )
+    router_started = telemetry.start_memory_router()
+    clock.value = 0.075
+    telemetry.finish_memory_router(router_started, action="chat")
+    telemetry.mark_llm_request(history_turns=0)
+    clock.value = 0.100
+    telemetry.finish(status="success")
+
+    assert summaries[0]["request_kind"] == "llm"
+    assert summaries[0]["memory_router_ms"] == 75.0
+    assert summaries[0]["memory_router_action"] == "chat"
+
+
+def test_router_failure_action_is_sanitized_without_payload_fields() -> None:
+    module = telemetry_module()
+    clock = ManualClock()
+    summaries: list[dict[str, object]] = []
+    telemetry = module.RequestTelemetry(
+        "router-error",
+        clock=clock,
+        summary_sink=summaries.append,
+    )
+    telemetry.mark_memory_command("clarify")
+    router_started = telemetry.start_memory_router()
+    clock.value = 0.020
+    telemetry.finish_memory_router(router_started, action="invalid")
+    telemetry.finish(status="success")
+
+    assert summaries[0]["memory_router_ms"] == 20.0
+    assert summaries[0]["memory_router_action"] == "invalid"
+    assert "user" not in str(summaries[0]).lower()
+    assert "content" not in str(summaries[0]).lower()
+
+
+def test_error_summary_uses_finite_failure_phase_and_unavailable_values() -> None:
+    module = telemetry_module()
+    clock = ManualClock()
+    summaries: list[dict[str, object]] = []
+    telemetry = module.RequestTelemetry(
+        "failed-request",
+        clock=clock,
+        summary_sink=summaries.append,
+    )
+    telemetry.mark_llm_request(history_turns=0)
+    provider_started = telemetry.start_provider()
+    clock.value = 0.125
+    telemetry.fail_provider(provider_started)
+    clock.value = 0.150
+    telemetry.finish(status="error")
+
+    summary = summaries[0]
+    assert summary["status"] == "error"
+    assert summary["failure_phase"] == "provider_before_first_token"
+    assert summary["provider_first_token_ms"] is None
+    assert summary["provider_stream_ms"] is None
+    assert summary["total_llm_ms"] == 125.0
+    assert summary["first_delta_ms"] is None
+
+
+def test_context_binding_restores_the_exact_previous_value() -> None:
+    module = telemetry_module()
+    outer = module.RequestTelemetry("outer")
+    inner = module.RequestTelemetry("inner")
+
+    assert module.current_request_telemetry().is_noop
+    outer_token = module.bind_request_telemetry(outer)
+    assert module.current_request_telemetry() is outer
+    inner_token = module.bind_request_telemetry(inner)
+    assert module.current_request_telemetry() is inner
+
+    module.reset_request_telemetry(inner_token)
+    assert module.current_request_telemetry() is outer
+    module.reset_request_telemetry(outer_token)
+    assert module.current_request_telemetry().is_noop
+
+
+def test_clock_and_summary_sink_failures_are_best_effort() -> None:
+    module = telemetry_module()
+
+    def broken_clock() -> float:
+        raise RuntimeError("clock failed")
+
+    def broken_sink(summary: dict[str, object]) -> None:
+        del summary
+        raise RuntimeError("log handler failed")
+
+    telemetry = module.RequestTelemetry(
+        "best-effort",
+        clock=broken_clock,
+        summary_sink=broken_sink,
+    )
+    telemetry.mark_llm_request(history_turns=0)
+    with telemetry.measure_phase(
+        "memory_read_ms",
+        module.FailurePhase.MEMORY_READ,
+    ):
+        pass
+    telemetry.record_first_delta()
+    telemetry.finish(status="success")
