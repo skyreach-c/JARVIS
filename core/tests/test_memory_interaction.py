@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from jarvis_core.llm.client import LLMError
+from jarvis_core.llm.profiles import ModelProfile
 from jarvis_core.memory_interaction import (
     MEMORY_ROUTER_FAILURE_REPLY,
     MemoryInteractionCoordinator,
@@ -794,7 +795,16 @@ async def test_semantic_router_timing_is_recorded_without_sensitive_data() -> No
     summaries: list[dict[str, object]] = []
     store = InMemoryStore([PinnedMemory(id=3, content="private-memory")])
     router = TimedRouter(clock, intent("forget", memory_ids=[3]))
-    coordinator = MemoryInteractionCoordinator(store, router)
+    router_profile = ModelProfile(
+        name="structured_router",
+        provider="deepseek",
+        model="deepseek-v4-flash",
+    )
+    coordinator = MemoryInteractionCoordinator(
+        store,
+        router,
+        router_profile=router_profile,
+    )
     telemetry = RequestTelemetry(
         "router-request",
         clock=clock,
@@ -813,6 +823,12 @@ async def test_semantic_router_timing_is_recorded_without_sensitive_data() -> No
     assert summary["command"] == "forget"
     assert summary["memory_router_ms"] == 40.0
     assert summary["memory_router_action"] == "forget"
+    assert summary["memory_router_profile"] == "structured_router"
+    assert summary["memory_router_provider"] == "deepseek"
+    assert summary["memory_router_model"] == "deepseek-v4-flash"
+    assert "profile" not in summary
+    assert "provider" not in summary
+    assert "model" not in summary
     assert "private-memory" not in str(summary)
 
 

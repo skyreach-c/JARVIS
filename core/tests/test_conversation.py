@@ -7,6 +7,7 @@ import pytest
 
 from jarvis_core.conversation import DEFAULT_MAX_SESSION_TURNS, LLMConversation
 from jarvis_core.llm.client import ChatMessage, LLMClient, LLMError
+from jarvis_core.llm.profiles import ModelProfile
 from jarvis_core.memory_router import MemoryIntent, MemoryRouterRequest
 from jarvis_core.memory_store import (
     ClearAllResult,
@@ -265,6 +266,8 @@ def make_conversation(
     max_session_turns: int = 10,
     memory_store: MemoryStore | None = None,
     memory_router: RecordingMemoryRouter | None = None,
+    chat_profile: ModelProfile | None = None,
+    router_profile: ModelProfile | None = None,
 ) -> LLMConversation:
     return LLMConversation(
         client,
@@ -272,6 +275,8 @@ def make_conversation(
         capability_constraints="CAPABILITY_SENTINEL",
         memory_store=memory_store or InMemoryStore(),
         memory_router=memory_router or RecordingMemoryRouter(),
+        chat_profile=chat_profile,
+        memory_router_profile=router_profile,
         max_session_turns=max_session_turns,
     )
 
@@ -1079,6 +1084,35 @@ async def test_llm_telemetry_records_context_sizes_and_first_valid_chunk() -> No
     assert summary["prompt_chars"] == sum(
         len(message["content"]) for message in client.calls[0]
     )
+
+
+async def test_llm_telemetry_identifies_the_actual_chat_client_profile() -> None:
+    summaries: list[dict[str, object]] = []
+    profile = ModelProfile(
+        name="reasoning_strong",
+        provider="packycode",
+        model="gpt-5.6-sol",
+        reasoning_effort="low",
+    )
+    conversation = make_conversation(
+        RecordingLLMClient([["answer"]]),
+        chat_profile=profile,
+    )
+    telemetry = RequestTelemetry(
+        "profiled-chat",
+        summary_sink=summaries.append,
+    )
+    token = bind_request_telemetry(telemetry)
+    try:
+        await collect_reply(conversation, "question")
+        telemetry.finish(status="success")
+    finally:
+        reset_request_telemetry(token)
+
+    summary = summaries[0]
+    assert summary["profile"] == "reasoning_strong"
+    assert summary["provider"] == "packycode"
+    assert summary["model"] == "gpt-5.6-sol"
 
 
 @pytest.mark.parametrize(

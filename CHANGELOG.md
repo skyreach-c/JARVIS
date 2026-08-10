@@ -6,6 +6,18 @@ JARVIS 的重要版本变化记录在这里。详细问题、改进和验收档�
 
 - 当前没有已批准但尚未封版的功能。
 
+## [v0.5A] — SEALED
+
+### Added
+
+- 保留 DeepSeek Chat，并增加 PackyCode Responses API Adapter 与 `gpt-5.6-sol` 强模型 Profile。
+- 增加 `chat_default`、`reasoning_strong`、`structured_router` 的静态 Profile 装配和隔离 telemetry。
+
+### Fixed
+
+- 将 PackyCode production 默认 Base URL 固定为真实 API 验收通过的 `https://www.packyapi.com/v1`。
+- Responses streaming 仅以 `response.completed` 为成功终态，并安全处理 refusal、failed、incomplete、truncated 与空响应。
+
 ## [v0.4C.2] — SEALED
 
 ### Added

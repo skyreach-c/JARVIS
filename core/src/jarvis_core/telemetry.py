@@ -9,6 +9,8 @@ from contextvars import ContextVar, Token
 from enum import StrEnum
 from typing import Literal
 
+from jarvis_core.llm.profiles import ModelProfile
+
 LOGGER = logging.getLogger("jarvis_core.perf")
 
 type RequestStatus = Literal["success", "error"]
@@ -59,6 +61,12 @@ class RequestTelemetry:
         self._request_started_at = self._now()
         self._request_kind: Literal["llm", "memory_command"] | None = None
         self._command: str | None = None
+        self._profile: str | None = None
+        self._provider: str | None = None
+        self._model: str | None = None
+        self._memory_router_profile: str | None = None
+        self._memory_router_provider: str | None = None
+        self._memory_router_model: str | None = None
         self._failure_phase: FailurePhase | None = None
         self._emitted = False
 
@@ -79,11 +87,20 @@ class RequestTelemetry:
         self._message_count: int | None = None
         self._prompt_chars: int | None = None
 
-    def mark_llm_request(self, *, history_turns: int) -> None:
+    def mark_llm_request(
+        self,
+        *,
+        history_turns: int,
+        profile: ModelProfile | None = None,
+    ) -> None:
         if self.is_noop:
             return
         self._request_kind = "llm"
         self._history_turns = history_turns
+        if profile is not None:
+            self._profile = profile.name
+            self._provider = profile.provider
+            self._model = profile.model
 
     def mark_memory_command(self, command: str) -> None:
         if self.is_noop:
@@ -128,7 +145,15 @@ class RequestTelemetry:
     def start_provider(self) -> float | None:
         return self._now()
 
-    def start_memory_router(self) -> float | None:
+    def start_memory_router(
+        self,
+        *,
+        profile: ModelProfile | None = None,
+    ) -> float | None:
+        if not self.is_noop and profile is not None:
+            self._memory_router_profile = profile.name
+            self._memory_router_provider = profile.provider
+            self._memory_router_model = profile.model
         return self._now()
 
     def finish_memory_router(
@@ -223,6 +248,14 @@ class RequestTelemetry:
                     "prompt_chars": self._prompt_chars,
                 }
             )
+            if self._profile is not None:
+                summary.update(
+                    {
+                        "profile": self._profile,
+                        "provider": self._provider,
+                        "model": self._model,
+                    }
+                )
         elif self._request_kind == "memory_command":
             summary.update(
                 {
@@ -242,6 +275,14 @@ class RequestTelemetry:
         if self._memory_router_action is not None:
             summary["memory_router_ms"] = self._memory_router_ms
             summary["memory_router_action"] = self._memory_router_action
+            if self._memory_router_profile is not None:
+                summary.update(
+                    {
+                        "memory_router_profile": self._memory_router_profile,
+                        "memory_router_provider": self._memory_router_provider,
+                        "memory_router_model": self._memory_router_model,
+                    }
+                )
         if status == "error":
             summary["failure_phase"] = str(
                 self._failure_phase or FailurePhase.REQUEST_HANDLING

@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from jarvis_core.llm.client import LLMError
+from jarvis_core.llm.profiles import ModelProfile
 from jarvis_core.memory_commands import (
     MemoryExecutionResult,
     ParsedMemoryCommand,
@@ -104,9 +105,16 @@ def _unexpected_arguments_failure(intent: MemoryIntent) -> IntentValidationFailu
 
 
 class MemoryInteractionCoordinator:
-    def __init__(self, store: MemoryStore, router: MemoryIntentRouter) -> None:
+    def __init__(
+        self,
+        store: MemoryStore,
+        router: MemoryIntentRouter,
+        *,
+        router_profile: ModelProfile | None = None,
+    ) -> None:
         self.store = store
         self.router = router
+        self.router_profile = router_profile
         self._last_created_memory_id: int | None = None
         self._last_listed_memory_ids: tuple[int, ...] = ()
         self._pending_clarification: PendingClarification | None = None
@@ -193,7 +201,9 @@ class MemoryInteractionCoordinator:
             last_listed_memory_ids=self._last_listed_memory_ids,
             pending_clarification=self._pending_clarification,
         )
-        router_started_at = telemetry.start_memory_router()
+        router_started_at = telemetry.start_memory_router(
+            profile=self.router_profile,
+        )
         try:
             routed_intent = await self.router.route(request)
         except asyncio.CancelledError:

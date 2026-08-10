@@ -154,3 +154,68 @@ from verified executor results.
 ```
 
 任何模型、Router、Conversation 或展示层都只能理解、提出或呈现操作；只有经过 Core 校验并由真实 executor 成功执行后返回的结果，才能成为“已保存”“已删除”“已清空”以及未来文件、应用、邮件、Windows、Codex、ROS2 或机器人控制等副作用成功声明的来源。未执行、执行失败、结果未验证或状态不确定时，必须 fail closed，不得声称成功。
+
+## ADR-015：v0.5A 多模型 Provider 基础
+
+JARVIS Core 保留 provider-neutral `LLMClient.stream_chat(messages)` 和
+`StructuredLLMClient.complete_json(messages)` 边界。普通聊天新增 PackyCode
+Responses API Adapter，同时保留现有 DeepSeek Provider。Provider 表示服务商和线协议，
+Model 表示实际请求的模型 ID，Model Profile 表示某项 Core 工作负载使用的 Provider、
+Model 及推理参数组合；PackyCode 的 `codex` 分组属于服务商 token/计费路由信息，
+不是模型 ID，也不在没有文档依据时作为额外请求字段发送。
+
+v0.5A 使用三个静态 Profile：`chat_default` 指向 DeepSeek，
+`reasoning_strong` 指向 PackyCode `gpt-5.6-sol` 且默认 reasoning effort 为 `low`，
+`structured_router` 继续指向 DeepSeek。只有前两个 Profile 可以通过
+`JARVIS_CHAT_PROFILE` 选择；本轮不实现自动模型 Router、fallback、并行回答、投票或
+运行时 UI 切换。PackyCode Key 缺失不阻止 Core readiness，SDK client 仅在实际请求时
+延迟创建。
+
+PackyCode Adapter 使用 `/v1/responses`、`store=false` 和显式的 60 秒 timeout、零 SDK
+retry。每轮仍由 JARVIS 从 Personality、Pinned Memory、Session Context 和当前用户消息
+重新构造完整输入；不使用 `previous_response_id`、provider-side conversation 或 persisted
+reasoning state。只有非空 `response.output_text.delta` 和 `response.refusal.delta` 会成为
+可见文本，且 `response.completed` 是唯一正常完成终态。failed、incomplete、缺少
+completed 或 completed 无可见文本均 fail closed，不能提交不完整 Session turn。
+
+选择 PackyCode 普通聊天时，正常 Chat prompt 中的 Pinned Memory 和 Session Context 会
+发送给 PackyCode；Semantic Memory Router 所需的有限上下文仍发送给 DeepSeek。PERF
+日志分别记录实际 Chat client 的 `profile/provider/model` 和实际 Router client 的
+`memory_router_profile/memory_router_provider/memory_router_model`，不得把启动时的 Chat
+Profile 错标为 Router Provider。日志不记录 API Key、Authorization、Base URL、Prompt、
+用户文本、Memory 内容或 Provider 原始响应。
+
+第三方 Provider 的底层实际模型无法由 JARVIS 加密验证；Core 只能保证请求中的模型 ID
+为配置值。人工验收需要在 PackyCode 消费日志中核对真实模型和费用。v0.5A 已完成
+DeepSeek 与 PackyCode 真实 API、Profile 隔离、Memory Router 隔离及副作用安全回归，并于
+2026-08-11 标记为 `Manual Acceptance: PASS · SEALED`。
+
+## ADR-016：v0.5B Agent Runtime Foundation 方向（暂定）
+
+v0.5A 完成后的下一阶段暂定为 v0.5B Agent Runtime Foundation。JARVIS 最终不由
+Python Core 硬编码具体任务 workflow；目标运行循环为：
+
+```text
+Model → Tool Call → Core Validation → Executor → Tool Result → Model
+```
+
+在该方向中，Supervisor/Agent Model 根据当前上下文和真实 Tool Result 动态决定下一步。
+Python Core 只提供通用 Tool Registry、schema validation、permission boundary、execution
+与 observation feedback，不预先写死“调用 Codex 后做什么”“打开 VS Code 后做什么”等
+任务流程。任何 Tool 输出和副作用仍必须通过 Core 校验与真实 executor 执行，副作用成功
+声明继续遵守全局 invariant：只能来源于已验证的 executor 结果。
+
+该条目仅记录后续架构方向，不代表 v0.5B 已获最终 Scope 批准。v0.5A 不实现 Tool
+Registry、Supervisor、Agent loop、Codex/Windows/ROS2 Tool 或固定 workflow。
+
+## ADR-017：采用项目级 Engineering Reliability Rules
+
+JARVIS 将 [`engineering-reliability.md`](engineering-reliability.md) 作为所有重要功能开发的
+项目级工程约束。后续设计、实现、测试、外部 smoke test、验收与封版都必须遵守其中对事实
+验证、Source of Truth、默认配置、状态 ownership、模块隔离、边界校验、fail-closed 副作用、
+诊断脱敏、Scope 控制和 Reality Check 的 Hard Rules。
+
+该决策适用于 Provider、API、Python Core、Tauri、React、WebSocket、Memory、Agent Runtime、
+Tools、Codex、Browser、Computer Use、Vision、Windows、文件系统、数据库、ROS2、外部程序和
+硬件边界，不绑定某个版本或某一家 Provider。规则只约束工程开发与验收流程；本次决策不修改
+任何 runtime 行为。

@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from typing import Protocol
 
 from jarvis_core.llm.client import ChatMessage, LLMClient
+from jarvis_core.llm.profiles import ModelProfile
 from jarvis_core.memory_interaction import MemoryInteractionCoordinator
 from jarvis_core.memory_router import MemoryIntentRouter
 from jarvis_core.memory_store import MemoryStore, PinnedMemory
@@ -25,6 +26,8 @@ class LLMConversation:
         capability_constraints: str,
         memory_store: MemoryStore,
         memory_router: MemoryIntentRouter,
+        chat_profile: ModelProfile | None = None,
+        memory_router_profile: ModelProfile | None = None,
         max_session_turns: int = DEFAULT_MAX_SESSION_TURNS,
     ) -> None:
         if (
@@ -38,9 +41,11 @@ class LLMConversation:
         self.personality_instructions = personality_instructions
         self.capability_constraints = capability_constraints
         self.memory_store = memory_store
+        self.chat_profile = chat_profile
         self.memory_interaction = MemoryInteractionCoordinator(
             memory_store,
             memory_router,
+            router_profile=memory_router_profile,
         )
         self.max_session_turns = max_session_turns
         self._history: list[ChatMessage] = []
@@ -60,7 +65,10 @@ class LLMConversation:
                 yield interaction_result.reply
             return
 
-        telemetry.mark_llm_request(history_turns=len(self._history) // 2)
+        telemetry.mark_llm_request(
+            history_turns=len(self._history) // 2,
+            profile=self.chat_profile,
+        )
         with telemetry.measure_phase(
             "memory_read_ms",
             FailurePhase.MEMORY_READ,

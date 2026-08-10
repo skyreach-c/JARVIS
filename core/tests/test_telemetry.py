@@ -1,5 +1,7 @@
 import importlib
 
+from jarvis_core.llm.profiles import ModelProfile
+
 
 def telemetry_module():  # type: ignore[no-untyped-def]
     return importlib.import_module("jarvis_core.telemetry")
@@ -118,16 +120,35 @@ def test_router_timings_are_optional_and_preserved_on_chat_fallthrough() -> None
         clock=clock,
         summary_sink=summaries.append,
     )
-    router_started = telemetry.start_memory_router()
+    router_profile = ModelProfile(
+        name="structured_router",
+        provider="deepseek",
+        model="deepseek-v4-flash",
+    )
+    router_started = telemetry.start_memory_router(profile=router_profile)
     clock.value = 0.075
     telemetry.finish_memory_router(router_started, action="chat")
-    telemetry.mark_llm_request(history_turns=0)
+    telemetry.mark_llm_request(
+        history_turns=0,
+        profile=ModelProfile(
+            name="reasoning_strong",
+            provider="packycode",
+            model="gpt-5.6-sol",
+            reasoning_effort="low",
+        ),
+    )
     clock.value = 0.100
     telemetry.finish(status="success")
 
     assert summaries[0]["request_kind"] == "llm"
     assert summaries[0]["memory_router_ms"] == 75.0
     assert summaries[0]["memory_router_action"] == "chat"
+    assert summaries[0]["memory_router_profile"] == "structured_router"
+    assert summaries[0]["memory_router_provider"] == "deepseek"
+    assert summaries[0]["memory_router_model"] == "deepseek-v4-flash"
+    assert summaries[0]["profile"] == "reasoning_strong"
+    assert summaries[0]["provider"] == "packycode"
+    assert summaries[0]["model"] == "gpt-5.6-sol"
 
 
 def test_router_failure_action_is_sanitized_without_payload_fields() -> None:

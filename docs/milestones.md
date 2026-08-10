@@ -132,6 +132,22 @@ from verified executor results.
 - 人工验收：真实 DeepSeek Remember、Forget、多候选澄清、clear-all confirmation、跨重启持久化及普通聊天隔离均为 PASS。
 - 边界：确认前 Store 快照变化、executor 失败或输入不明确时一律不删除并 fail closed；Core 重启自然清除 pending。
 
+## v0.5A — Multi-Model Provider Foundation
+
+**状态：Manual Acceptance: PASS · SEALED**
+
+- 封版日期：2026-08-11
+- 唯一目标：保留 DeepSeek 的同时接入 PackyCode Responses API，使普通 Chat 可以通过静态 Profile 在两个 Provider 间切换，Memory Router 继续固定使用 DeepSeek。
+- 实现功能：增加 `chat_default`、`reasoning_strong` 和 `structured_router` Profile；增加 lazy `PackyCodeResponsesClient`，使用 `gpt-5.6-sol`、`reasoning.effort=low`、`store=false`、60 秒 timeout 和零 SDK retry；流式支持 output/refusal delta，并只接受 `response.completed` 正常终态。
+- 发现问题：服务商页面早期示例 endpoint 与真实可用 endpoint 不一致；同一请求中的 Chat Provider 与 Memory Router Provider 容易在 telemetry 中被错误混标；Responses API 的 EOF、failed、incomplete 和空 completed 必须明确 fail closed。
+- 根因：第三方 OpenAI-compatible 服务只兼容特定协议面，不能依据名称假设 endpoint、模型、终态和扩展行为与官方完全一致；Chat Profile 和系统 Router Profile若共享模糊身份字段会破坏可诊断性。
+- 最终改进：生产默认 Base URL 固定为已实测的 `https://www.packyapi.com/v1`，同时保留环境变量 override；Chat 与 Memory Router 分别记录实际 Profile/Provider/Model；Provider Adapter 将 Responses event 转换为现有统一文本流，不把第三方结构泄漏到 Conversation。
+- 自动验证：2026-08-11 运行 `scripts/check.ps1`；Python 407、React 7、Rust 6 项测试通过，Ruff、React production build 与 Rust fmt/check 通过。
+- 人工验收：`chat_default → DeepSeek/deepseek-v4-flash`、`reasoning_strong → PackyCode/gpt-5.6-sol` 均完成真实流式调用；reasoning_strong 下 Semantic Memory Router 仍固定使用 DeepSeek；Memory Fast Path、Forget、clear-all confirmation 与 executor-only side-effect safety 回归均为 PASS。
+- 安全与数据边界：API Key 只从根目录 `.env`/进程环境读取，不进入源码、测试、日志或 Git；选择 PackyCode 时，正常 Chat 的 Personality、Pinned Memory、Session Context 和当前用户消息会发送给 PackyCode，Memory Router 所需的有限上下文仍发送给 DeepSeek。
+- 已知限制：第三方 Provider 的底层实际模型无法由 Core 加密验证；Profile 只能在启动时静态选择；没有自动 Model Router、fallback、并行回答、模型投票或 UI 切换。
+- 边界：不修改 Memory、Session、WebSocket、React 或 Tauri；不实现 Agent Runtime、Supervisor、Codex/Windows Tools 或 provider-side conversation state。
+
 ## 后续封版记录模板
 
 ```markdown

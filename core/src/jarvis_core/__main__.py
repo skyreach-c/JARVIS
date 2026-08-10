@@ -5,8 +5,12 @@ import sys
 from pathlib import Path
 
 from jarvis_core.conversation import Conversation, LLMConversation
-from jarvis_core.llm.config import find_project_root, load_deepseek_settings
-from jarvis_core.llm.deepseek import DeepSeekClient, DeepSeekStructuredClient
+from jarvis_core.llm.config import find_project_root, load_llm_settings
+from jarvis_core.llm.profiles import (
+    build_model_profiles,
+    create_chat_client,
+    create_structured_client,
+)
 from jarvis_core.memory_router import SemanticMemoryIntentRouter
 from jarvis_core.memory_store import (
     SQLiteMemoryStore,
@@ -21,17 +25,35 @@ logger = logging.getLogger(__name__)
 
 def build_conversation(*, data_dir: Path | str | None = None) -> Conversation:
     project_root = find_project_root(Path(__file__))
-    settings = load_deepseek_settings(project_root)
+    settings = load_llm_settings(project_root)
+    profiles = build_model_profiles(
+        deepseek_model=settings.deepseek.model,
+        reasoning_strong_model=settings.reasoning_strong_model,
+        reasoning_strong_effort=settings.reasoning_strong_effort,
+    )
+    chat_profile = profiles[settings.chat_profile]
+    router_profile = profiles["structured_router"]
+    chat_client = create_chat_client(
+        chat_profile,
+        deepseek_settings=settings.deepseek,
+        packycode_settings=settings.packycode,
+    )
+    router_client = create_structured_client(
+        router_profile,
+        deepseek_settings=settings.deepseek,
+    )
     memory_store = SQLiteMemoryStore(
         resolve_memory_database_path(data_dir=data_dir)
     )
     return LLMConversation(
-        DeepSeekClient(settings),
+        chat_client,
         personality_instructions=JARVIS_PERSONALITY_INSTRUCTIONS,
         capability_constraints=CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS,
         memory_store=memory_store,
+        chat_profile=chat_profile,
+        memory_router_profile=router_profile,
         memory_router=SemanticMemoryIntentRouter(
-            DeepSeekStructuredClient(settings)
+            router_client
         ),
     )
 
