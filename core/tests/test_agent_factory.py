@@ -22,6 +22,7 @@ from jarvis_core.tools.filesystem import (
 )
 from jarvis_core.tools.runtime_info import RUNTIME_INFO_TOOL_NAME
 from jarvis_core.tools.system_info import OS_INFO_TOOL_NAME
+from jarvis_core.tools.text_files import READ_TEXT_TOOL_NAME
 
 
 class FakeStructuredClient:
@@ -61,14 +62,14 @@ class FakeChatClient:
         yield "answer"
 
 
-async def test_factory_binds_profiles_chat_and_four_read_only_tools_in_order(
+async def test_factory_binds_profiles_chat_and_five_read_only_tools_in_order(
     tmp_path: Path,
 ) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()
     (project_root / "notes").mkdir()
     project_file = project_root / "notes" / "fact.txt"
-    project_file.write_text("content-must-not-be-read", encoding="utf-8")
+    project_file.write_text("工厂读取🙂\n", encoding="utf-8", newline="")
     brain_client = FakeStructuredClient()
     chat_client = FakeChatClient()
     brain_profile = ModelProfile(
@@ -101,6 +102,7 @@ async def test_factory_binds_profiles_chat_and_four_read_only_tools_in_order(
         OS_INFO_TOOL_NAME,
         LIST_DIRECTORY_TOOL_NAME,
         GET_METADATA_TOOL_NAME,
+        READ_TEXT_TOOL_NAME,
     )
     assert {definition.risk_level for definition in definitions} == {"read_only"}
 
@@ -125,6 +127,13 @@ async def test_factory_binds_profiles_chat_and_four_read_only_tools_in_order(
             arguments={"relative_path": "notes/fact.txt"},
         ),
         request_id="factory-get-metadata",
+    )
+    read_result = await runtime.registry.execute(
+        ToolCall(
+            tool_name=READ_TEXT_TOOL_NAME,
+            arguments={"relative_path": "notes/fact.txt", "max_lines": 10},
+        ),
+        request_id="factory-read-text",
     )
 
     assert runtime_result.success is True
@@ -155,6 +164,12 @@ async def test_factory_binds_profiles_chat_and_four_read_only_tools_in_order(
         "kind": "file",
         "size_bytes": project_file.stat().st_size,
     }
+    assert read_result.success is True
+    assert read_result.data is not None
+    assert read_result.data["relative_path"] == "notes/fact.txt"
+    assert read_result.data["content_trust"] == "untrusted_data"
+    assert read_result.data["instruction_authority"] == "none"
+    assert read_result.data["content"] == "工厂读取🙂\n"
 
 
 async def test_factory_metadata_tool_executes_once_and_chat_observes_only_tool_result(
@@ -257,10 +272,19 @@ async def test_factory_metadata_tool_executes_once_and_chat_observes_only_tool_r
         "tool_risk_level",
         "tool_status",
         "tool_execution_ms",
+        "tool_observation_chars",
+        "tool_observation_utf8_bytes",
     }
     assert summary["tool_name"] == GET_METADATA_TOOL_NAME
     assert summary["tool_status"] == "success"
     assert isinstance(summary["tool_execution_ms"], float)
+    appended_observation = chat_client.calls[0][-2:]
+    assert summary["tool_observation_chars"] == sum(
+        len(message["content"]) for message in appended_observation
+    )
+    assert summary["tool_observation_utf8_bytes"] == sum(
+        len(message["content"].encode("utf-8")) for message in appended_observation
+    )
     assert summary["agent_brain_profile"] == "agent_brain"
     assert summary["agent_brain_provider"] == "deepseek"
     assert summary["agent_brain_model"] == "deepseek-v4-flash"

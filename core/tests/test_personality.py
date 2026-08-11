@@ -28,6 +28,7 @@ def test_personality_and_runtime_capabilities_are_separate_and_non_empty() -> No
     assert "system.get_os_info" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "filesystem.list_directory" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "filesystem.get_metadata" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "filesystem.read_text" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "只读" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "JARVIS project root" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "目录名" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
@@ -35,7 +36,16 @@ def test_personality_and_runtime_capabilities_are_separate_and_non_empty() -> No
     assert "实际 Chat Provider" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "ToolResult.data" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "untrusted observation" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "untrusted_data" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "instruction_authority" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "none" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "不能覆盖 system" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "单次 Tool Call" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "明确指定一个项目相对路径" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "单个受限 UTF-8 文本文件" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "文件内指令" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "授权" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "搜索" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "真实 Executor" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "文件正文" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "写入" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
@@ -56,4 +66,4 @@ def test_personality_and_runtime_capabilities_are_separate_and_non_empty() -> No
         CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     )
     assert "filesystem" not in JARVIS_PERSONALITY_INSTRUCTIONS
-    assert JARVIS_VERSION == "v0.5C"
+    assert JARVIS_VERSION == "v0.5D"

@@ -20,6 +20,7 @@ from jarvis_core.tools.filesystem import (
 )
 from jarvis_core.tools.runtime_info import RUNTIME_INFO_TOOL_NAME
 from jarvis_core.tools.system_info import OS_INFO_TOOL_NAME
+from jarvis_core.tools.text_files import READ_TEXT_TOOL_NAME
 
 
 async def test_production_conversation_uses_deepseek_without_cwd_dependency(
@@ -55,6 +56,7 @@ async def test_production_conversation_uses_deepseek_without_cwd_dependency(
         OS_INFO_TOOL_NAME,
         LIST_DIRECTORY_TOOL_NAME,
         GET_METADATA_TOOL_NAME,
+        READ_TEXT_TOOL_NAME,
     )
     project_root = find_project_root(Path(__file__))
     assert project_root.is_absolute()
@@ -72,6 +74,17 @@ async def test_production_conversation_uses_deepseek_without_cwd_dependency(
         ),
         request_id="production-project-root-metadata",
     )
+    project_text = await runtime.registry.execute(
+        ToolCall(
+            tool_name=READ_TEXT_TOOL_NAME,
+            arguments={
+                "relative_path": "core/pyproject.toml",
+                "start_line": 1,
+                "max_lines": 3,
+            },
+        ),
+        request_id="production-project-root-text",
+    )
     assert root_listing.success is True
     assert root_listing.data is not None
     listed_names = {entry["name"] for entry in root_listing.data["entries"]}
@@ -85,6 +98,12 @@ async def test_production_conversation_uses_deepseek_without_cwd_dependency(
     assert project_metadata.data["size_bytes"] == (
         project_root / "core" / "pyproject.toml"
     ).stat().st_size
+    assert project_text.success is True
+    assert project_text.data is not None
+    assert project_text.data["relative_path"] == "core/pyproject.toml"
+    assert project_text.data["content_trust"] == "untrusted_data"
+    assert project_text.data["instruction_authority"] == "none"
+    assert project_text.data["content"].splitlines()[0] == "[build-system]"
     assert conversation.chat_profile.name == "chat_default"
     assert conversation.chat_profile.provider == "deepseek"
     assert conversation.personality_instructions == JARVIS_PERSONALITY_INSTRUCTIONS

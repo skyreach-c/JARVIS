@@ -318,3 +318,27 @@ v0.5B Agent Runtime/Memory safety 回归均为 PASS。后续副作用能力必�
 JARVIS 采用 `docs/master-roadmap.md` 作为长期技术方向。各里程碑可以细化实现细节，但不得静默改变总体架构；方向变化必须显式更新 Master Roadmap，并通过新的 ADR 记录。当前已封版行为仍以对应 ADR 与里程碑档案为准，Master Roadmap 不反向覆盖 sealed semantics。
 
 本 ADR 只取代旧 ADR 中非约束性的未来候选版本顺序，不修改任何已封版 runtime 行为。新的顺序先完成只读 Workspace Knowledge，再建立 Task Runtime 与 Governance，随后才接入 Codex 等副作用 Specialist；原因是长任务标识、预算、取消、权限、隔离 worktree 和执行证据必须先于 Codex 副作用能力成为 Core 的明确治理边界。
+
+## ADR-021：v0.5D Bounded Workspace Text Observation
+
+**状态：Accepted — Manual Acceptance: PASS · SEALED（2026-08-11）**
+
+v0.5D 在 v0.5C 的唯一 `ToolRegistry` 中追加第五个只读 Tool `filesystem.read_text`。它复用同一个 `ProjectPathPolicy`，只接受 JARVIS project root 内的显式单文件相对路径，不搜索仓库、不读取多个文件，也不改变 AgentRuntime 的一次 Brain、最多一次 Tool、一次最终 Chat 生命周期。
+
+Executor 只接受受支持后缀的严格 UTF-8 文本，并以固定的 256 KiB 源文件、200 行、20,000 Python 字符和 64 KiB 返回 UTF-8 字节上限 fail closed。读取前、打开 handle、读取后及路径复核会检查类型、identity、size、mtime、ctime 与 Windows 文件属性；这些检查缩小但不能完全消除恶意 ABA race。同步读取与扫描通过 `asyncio.to_thread()` 运行；Registry timeout 会停止等待后台结果并产生失败 ToolResult，随后仍由 Chat 基于该失败 observation 回答；外部取消会传播并阻止后续 Chat。两者都不能强制终止已经启动的后台线程，线程仍可能运行至本次只读操作自然结束。binary magic、NUL、非法 UTF-8、受限 control character、protected path 或全文件高置信 Secret 命中时不返回任何正文，也不生成局部打码结果。Secret scan 是窄范围 best-effort 防线，不宣称完整 DLP。
+
+成功正文只在 Agent Brain 完成本次决策后，作为 `ToolResult.data` 发送给本次实际 Chat Provider，并固定标记为 `content_trust=untrusted_data` 与 `instruction_authority=none`；正文不发送给 Agent Brain、Memory Router、Memory Store 或 telemetry。文件中的 prompt、命令、Tool Call 或权限声明均只是数据，不能覆盖 system 指令、授权操作或证明现实副作用。committed Session 不接收内部 Tool observation；Session 仍只提交原始 user 与正常完成的最终 assistant。
+
+现有 `prompt_chars` 继续只描述 Tool observation 追加前的 Conversation messages。为解释实际 Chat 输入规模，本轮增加可选数值 `tool_observation_chars` 和 `tool_observation_utf8_bytes`，统计追加给 Chat 的 `agent_tool_call` 与 `verified_tool_result` 两条 message content；字段不记录路径、文件名、正文或 ToolResult payload。无 observation、Memory Fast Path 或 Brain/Tool 前失败时字段不存在；成功或失败 ToolResult 实际发送给 Chat 时记录，之后 Chat 失败或取消仍保留。
+
+本轮不增加 CapabilityRegistry、PermissionPolicy、搜索、RAG、向量数据库、自动索引、多 Tool loop、文件写入/删除、命令执行、Codex、Windows Action、Browser 或 ROS2。2026-08-11，完整自动检查与 Windows 人工验收均通过，v0.5D 正式封版。
+
+## ADR-022：采用风险分级验证（Risk-Proportional Verification）
+
+**状态：Accepted（2026-08-11；从 v0.5D 之后的变更开始执行）**
+
+验证强度必须与变更风险成比例，不能把最高强度审查机械复制到所有功能。v0.5D 首次让本地文件正文跨越 Secret、prompt-injection、路径/handle 竞态和云端 Provider 数据边界，因此使用完整跨栈回归和多轮专项审查是合理的；这不构成后续低风险变更的默认流程。
+
+采用三档基线：低风险变更（文档、文案、局部确定性且不涉及安全/状态边界的修改）执行聚焦测试、lint/format、diff 与敏感信息检查，默认不启动多轮对抗审查；中风险变更执行定向 TDD、受影响回归和一次独立审查；高风险变更（认证/Secret、持久化/schema、副作用、权限、文件/系统执行、Provider/协议、并发/取消或关键跨边界数据流）执行完整相关测试矩阵、跨栈回归、专项安全/规格审查及必要的真实人工验收。
+
+失败证据或新发现的 trust boundary 可以提升风险等级；不得为了进度降低明确计划、用户要求、CI、`AGENTS.md` 或 sealed ADR 规定的必做检查。目标是用足够证据证明正确性，同时避免低风险工作出现审查表演、重复边缘用例追逐和不成比例的验证成本。

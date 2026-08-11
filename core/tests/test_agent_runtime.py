@@ -170,7 +170,15 @@ async def test_respond_calls_brain_once_tool_zero_and_chat_once() -> None:
         decision=AgentDecision(action="respond", tool_call=None)
     )
 
-    chunks = await collect(runtime)
+    summaries: list[dict[str, object]] = []
+    telemetry = RequestTelemetry("respond-no-observation", summary_sink=summaries.append)
+    telemetry.mark_llm_request(history_turns=0)
+    token = bind_request_telemetry(telemetry)
+    try:
+        chunks = await collect(runtime)
+        telemetry.finish(status="success")
+    finally:
+        reset_request_telemetry(token)
 
     assert chunks == ["final ", "answer"]
     assert builder.calls[0][0] == "current request"
@@ -178,6 +186,8 @@ async def test_respond_calls_brain_once_tool_zero_and_chat_once() -> None:
     assert brain.calls == [builder.context]
     assert executor.calls == []
     assert chat.calls == [ORIGINAL_MESSAGES]
+    assert "tool_observation_chars" not in summaries[0]
+    assert "tool_observation_utf8_bytes" not in summaries[0]
 
 
 async def test_call_tool_executes_once_and_chat_receives_verified_result() -> None:
@@ -206,6 +216,114 @@ async def test_call_tool_executes_once_and_chat_receives_verified_result() -> No
     }
     assert all("final" not in message["content"] for message in chat.calls[0][:-1])
     assert builder.calls[0][0] == "current request"
+
+
+@pytest.mark.parametrize(
+    ("executor_result", "expected_status"),
+    [
+        (
+            ToolResult(
+                success=True,
+                data={
+                    "relative_path": "资料/观察🙂.txt",
+                    "content": "中文🙂正文",
+                },
+                error=None,
+                metadata={},
+            ),
+            "success",
+        ),
+        (
+            ToolResult(
+                success=False,
+                data=None,
+                error=ToolError(
+                    code="safe_failure",
+                    message="读取失败🙂",
+                    retryable=False,
+                ),
+                metadata={},
+            ),
+            "error",
+        ),
+    ],
+)
+async def test_tool_observation_telemetry_measures_exact_appended_chat_messages(
+    executor_result: ToolResult,
+    expected_status: str,
+) -> None:
+    runtime, _, _, chat, _ = registered_runtime(
+        decision=AgentDecision(
+            action="call_tool",
+            tool_call=ToolCall(tool_name="system.test", arguments={}),
+        ),
+        executor_result=executor_result,
+    )
+    summaries: list[dict[str, object]] = []
+    telemetry = RequestTelemetry("observation-size", summary_sink=summaries.append)
+    telemetry.mark_llm_request(history_turns=0)
+    token = bind_request_telemetry(telemetry)
+    try:
+        assert await collect(runtime) == ["final ", "answer"]
+        telemetry.finish(status="success")
+    finally:
+        reset_request_telemetry(token)
+
+    appended_messages = chat.calls[0][-2:]
+    summary = summaries[0]
+    assert summary["tool_status"] == expected_status
+    assert summary["tool_observation_chars"] == sum(
+        len(message["content"]) for message in appended_messages
+    )
+    assert summary["tool_observation_utf8_bytes"] == sum(
+        len(message["content"].encode("utf-8")) for message in appended_messages
+    )
+    serialized_summary = json.dumps(summary, ensure_ascii=False)
+    assert "资料/观察🙂.txt" not in serialized_summary
+    assert "中文🙂正文" not in serialized_summary
+    assert "读取失败🙂" not in serialized_summary
+
+
+async def test_tool_observation_telemetry_failure_is_best_effort(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    runtime, _, _, chat, _ = registered_runtime(
+        decision=AgentDecision(
+            action="call_tool",
+            tool_call=ToolCall(tool_name="system.test", arguments={}),
+        )
+    )
+    summaries: list[dict[str, object]] = []
+    telemetry = RequestTelemetry("broken-observation-size", summary_sink=summaries.append)
+    telemetry.mark_llm_request(history_turns=0)
+    private_marker = "PRIVATE path/content/payload marker"
+    setter_calls = 0
+
+    def broken_setter(*, chars: int, utf8_bytes: int) -> None:
+        nonlocal setter_calls
+        del chars, utf8_bytes
+        setter_calls += 1
+        raise RuntimeError(private_marker)
+
+    monkeypatch.setattr(
+        telemetry,
+        "set_tool_observation_size",
+        broken_setter,
+        raising=False,
+    )
+    token = bind_request_telemetry(telemetry)
+    try:
+        assert await collect(runtime) == ["final ", "answer"]
+        telemetry.finish(status="success")
+    finally:
+        reset_request_telemetry(token)
+
+    assert setter_calls == 1
+    assert len(chat.calls) == 1
+    assert "tool_observation_chars" not in summaries[0]
+    assert "tool_observation_utf8_bytes" not in summaries[0]
+    assert private_marker not in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -284,13 +402,23 @@ async def test_brain_failure_is_terminal_and_does_not_fallback_to_chat() -> None
     )
     runtime, _, brain, chat, executor = registered_runtime(decision=failure)
 
-    with pytest.raises(AgentRuntimeError) as raised:
-        await collect(runtime)
+    summaries: list[dict[str, object]] = []
+    telemetry = RequestTelemetry("brain-failure-no-observation", summary_sink=summaries.append)
+    telemetry.mark_llm_request(history_turns=0)
+    token = bind_request_telemetry(telemetry)
+    try:
+        with pytest.raises(AgentRuntimeError) as raised:
+            await collect(runtime)
+        telemetry.finish(status="error")
+    finally:
+        reset_request_telemetry(token)
 
     assert raised.value is failure
     assert len(brain.calls) == 1
     assert chat.calls == []
     assert executor.calls == []
+    assert "tool_observation_chars" not in summaries[0]
+    assert "tool_observation_utf8_bytes" not in summaries[0]
 
 
 async def test_fake_builder_is_the_only_context_source_runtime_uses() -> None:
@@ -346,13 +474,29 @@ async def test_partial_chat_failure_propagates_without_retrying_brain_or_tool() 
         request_id="request-partial",
     )
 
-    assert await anext(stream) == "partial"
-    with pytest.raises(RuntimeError, match="chat failed"):
-        await anext(stream)
+    summaries: list[dict[str, object]] = []
+    telemetry = RequestTelemetry("partial-chat-failure", summary_sink=summaries.append)
+    telemetry.mark_llm_request(history_turns=0)
+    token = bind_request_telemetry(telemetry)
+    try:
+        assert await anext(stream) == "partial"
+        with pytest.raises(RuntimeError, match="chat failed"):
+            await anext(stream)
+        telemetry.mark_failure("provider_stream")
+        telemetry.finish(status="error")
+    finally:
+        reset_request_telemetry(token)
 
     assert len(brain.calls) == 1
     assert len(executor.calls) == 1
     assert len(failing_chat.calls) == 1
+    appended_messages = failing_chat.calls[0][-2:]
+    assert summaries[0]["tool_observation_chars"] == sum(
+        len(message["content"]) for message in appended_messages
+    )
+    assert summaries[0]["tool_observation_utf8_bytes"] == sum(
+        len(message["content"].encode("utf-8")) for message in appended_messages
+    )
 
 
 class CancellableBrain:

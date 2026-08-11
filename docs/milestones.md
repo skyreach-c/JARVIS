@@ -182,6 +182,24 @@ from verified executor results.
 - 已知限制：每个请求仍最多一次 Tool Call；没有 Task ID 或长任务。路径前后复核不能消除恶意本机进程制造的 ABA race；`asyncio.to_thread` timeout 会丢弃迟到结果，但不能强制终止已经开始的系统调用。
 - 边界：没有文件正文读取、写入、删除、命令执行、Windows Action、Codex、Browser、ROS2、任意磁盘访问、`CapabilityRegistry` 或通用 `PermissionPolicy`；AgentRuntime、Conversation、Memory、Provider、WebSocket、React 和 Tauri 保持 v0.5B 语义。
 
+## JARVIS v0.5D — Workspace Knowledge
+
+**状态：Manual Acceptance: PASS · SEALED**
+
+**自动验证：PASS**
+
+- 封版日期：2026-08-11
+- 唯一目标：在 v0.5C 的 project-root-only 只读能力上增加受控单文件文本观察，使 JARVIS 能读取并理解用户明确指定的项目文本，同时保持 Executor 是文件现实状态的唯一来源。
+- 实现功能：新增第五个只读 Tool `filesystem.read_text`，复用既有 `ProjectPathPolicy`；仅接受项目内显式单文件相对路径和受支持后缀，只读取严格 UTF-8/BOM 文本。固定上限为 256 KiB 源文件、200 行、20,000 Python 字符和 64 KiB 返回 UTF-8 字节；结果标记 `content_trust=untrusted_data`、`instruction_authority=none`。新增仅含数值的 `tool_observation_chars` 与 `tool_observation_utf8_bytes`。
+- 发现问题：实现和独立审查发现 Secret 扫描既可能把普通引用、类型注解、带参数调用误判为 literal secret，也可能漏过 namespaced/camelCase key、带空白或命名空间的 `SecretStr` wrapper；Windows path/fd stat 的 ctime 语义存在差异；读取前后还需要阻止对象替换、增长和属性变化。封版检查曾一次触发既有 2 秒 `process.ready` 固定超时，随后该测试独立重复 10 次及完整检查均通过，未发现生产回归。
+- 根因：文本读取首次跨越本地正文到云端 Chat 的隐私与 prompt-injection 边界；仅凭扩展名、单次 stat 或宽泛 regex 无法同时保证 binary/竞态/Secret 的高置信 fail-closed 与可接受误报率。Python/Windows 的 path stat 与 fd stat 也不保证所有时间字段采用完全相同语义。
+- 最终改进：按 raw bytes → 大小/增长 → binary magic → NUL → strict UTF-8 → Unicode control → 全文件高置信 Secret → 完整行预算的固定顺序处理；读取前、open-fstat、读取后和路径复核比较对象身份、类型、大小、时间与属性，异常时丢弃全部 buffer。Secret 检测收敛为窄 filename/path 规则与明确 literal 形状，并用真实 literal、placeholder、env/reference、类型注解和函数调用的正反回归锁定。正文只在 Brain 决策后作为不可信 observation 发给实际 Chat Provider，不进入 Brain、Memory、Session 或 telemetry。
+- 自动验证：2026-08-11 新鲜运行完整 Python pytest，结果为 910 passed、1 skipped；Ruff、React 7 项测试、React production build、Rust fmt/check、Rust 6 项测试、`scripts/check.ps1` 与 `git diff --check` 全部通过。唯一 skip 仍是当前 Windows 账户没有创建真实 symlink 的权限，通用 reparse fail-closed 路径由模拟测试覆盖。
+- 人工验收：安全文本与分页读取、UTF-8/BOM、binary/NUL/非法编码/超大文件拒绝、protected path 与 Secret 全量拒绝、prompt-injection 仅作为数据、Tool observation telemetry 脱敏、两种 Chat Profile、Memory terminal routing 和 v0.5B/v0.5C 回归均为 PASS。
+- 安全与数据边界：正文只发送给本次实际 Chat Provider，并明确没有指令权限；不发送给 Agent Brain、Memory Router、MemoryStore 或 telemetry，也不提交进 Session。Secret 命中整次拒绝，不返回 partial 或 redacted content；日志不记录路径、文件名、正文、Secret 命中细节或 ToolResult payload。现实事实与成功 observation 只能来自真实 Executor Result。
+- 已知限制：Secret 扫描是高置信 best-effort 防线，不是完整 DLP；路径与 handle 前后复核不能彻底消除恶意本机进程制造的 ABA race；`asyncio.to_thread` timeout 或取消不能强杀已经启动的后台系统调用。每个请求仍只有一次 Brain、最多一次 Tool Call 和一次最终 Chat。
+- 边界：没有搜索、RAG、向量数据库、自动索引、多文件读取、文件写入/删除、命令执行、Codex、Windows Action、Browser、ROS2、Task ID、长任务、`CapabilityRegistry` 或通用 `PermissionPolicy`；AgentRuntime、ToolRegistry、Conversation、Memory、Provider、WebSocket、React 和 Tauri 的既有 ownership 保持不变。
+
 ## 后续封版记录模板
 
 ```markdown

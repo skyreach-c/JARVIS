@@ -89,6 +89,8 @@ class RequestTelemetry:
         self._tool_risk_level: str | None = None
         self._tool_status: ToolStatus | None = None
         self._tool_execution_ms: float | None = None
+        self._tool_observation_chars: int | None = None
+        self._tool_observation_utf8_bytes: int | None = None
         self._provider_first_token_ms: float | None = None
         self._provider_stream_ms: float | None = None
         self._total_llm_ms: float | None = None
@@ -212,6 +214,26 @@ class RequestTelemetry:
             return
         self._tool_execution_ms = self._elapsed_ms(started_at, self._now())
         self._tool_status = status
+
+    def set_tool_observation_size(
+        self,
+        *,
+        chars: int,
+        utf8_bytes: int,
+    ) -> None:
+        if self.is_noop:
+            return
+        if (
+            isinstance(chars, bool)
+            or not isinstance(chars, int)
+            or chars < 0
+            or isinstance(utf8_bytes, bool)
+            or not isinstance(utf8_bytes, int)
+            or utf8_bytes < 0
+        ):
+            return
+        self._tool_observation_chars = chars
+        self._tool_observation_utf8_bytes = utf8_bytes
 
     def start_memory_router(
         self,
@@ -362,6 +384,15 @@ class RequestTelemetry:
                         "tool_risk_level": self._tool_risk_level,
                         "tool_status": self._tool_status,
                         "tool_execution_ms": self._tool_execution_ms,
+                    }
+                )
+            if self._tool_observation_chars is not None:
+                summary.update(
+                    {
+                        "tool_observation_chars": self._tool_observation_chars,
+                        "tool_observation_utf8_bytes": (
+                            self._tool_observation_utf8_bytes
+                        ),
                     }
                 )
         elif self._request_kind == "memory_command":

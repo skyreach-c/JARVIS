@@ -119,11 +119,26 @@ class AgentRuntime:
                 raise
             tool_status = "success" if result.success else _tool_failure_status(result)
             telemetry.finish_tool(tool_started_at, status=tool_status)
+            original_message_count = len(chat_messages)
             chat_messages = _with_tool_observation(
                 chat_messages,
                 decision.tool_call,
                 result,
             )
+            try:
+                observation_contents = tuple(
+                    message["content"]
+                    for message in chat_messages[original_message_count:]
+                )
+                telemetry.set_tool_observation_size(
+                    chars=sum(len(content) for content in observation_contents),
+                    utf8_bytes=sum(
+                        len(content.encode("utf-8"))
+                        for content in observation_contents
+                    ),
+                )
+            except Exception:  # noqa: BLE001,S110 - telemetry must remain best-effort
+                pass
 
         chat_started_at = telemetry.start_chat(profile=self.chat_profile)
         try:

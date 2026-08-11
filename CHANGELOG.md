@@ -4,7 +4,32 @@ JARVIS 的重要版本变化记录在这里。详细问题、改进和验收档�
 
 ## [Unreleased]
 
-当前没有已批准但尚未封版的功能。
+### Status
+
+- 当前没有已批准但尚未封版的功能。
+
+## [v0.5D] — Workspace Knowledge · 2026-08-11 · SEALED
+
+Automated Verification: PASS · Manual Acceptance: PASS
+
+### Added
+
+- 新增 project-root-only 只读 `filesystem.read_text`，支持显式单文件路径、严格 UTF-8/BOM、完整行分页和固定 source/line/character/UTF-8 byte 预算。
+- PERF 新增仅含数值的可选 `tool_observation_chars` 与 `tool_observation_utf8_bytes`，描述实际追加给 Chat Provider 的内部 Tool observation 规模。
+
+### Security
+
+- 路径保护、raw binary/NUL、encoding/control、竞态复核与全文件高置信 Secret 扫描均 fail closed；命中时不返回 partial 或 redacted content。
+- 文件正文固定为 `untrusted_data`、`instruction_authority=none`，只发送给实际 Chat Provider，不进入 Agent Brain、Memory、Session 或 telemetry。
+
+### Process
+
+- 从后续版本开始正式采用 risk-proportional verification：低风险变更使用聚焦验证，中风险增加受影响回归和一次独立审查，只有安全、持久化、副作用或关键跨边界等高风险变更默认采用完整跨栈与专项审查；明确的用户、CI 和项目硬性要求始终优先。
+
+### Known limitations
+
+- Secret 扫描是 best-effort 而非完整 DLP；恶意本机 ABA race 与已经启动的 `asyncio.to_thread` 系统调用无法被完全消除或强制终止。
+- 仍无搜索、RAG、索引、多 Tool loop、写入/删除、命令执行、Codex、Windows Action、Browser、ROS2、Task ID 或长任务。
 
 ## [v0.5C] — Capability Runtime Foundation · 2026-08-11 · SEALED
 

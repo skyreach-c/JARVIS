@@ -260,6 +260,53 @@ def test_clock_and_summary_sink_failures_are_best_effort() -> None:
     telemetry.finish(status="success")
 
 
+def test_tool_observation_sizes_are_optional_non_negative_integers() -> None:
+    module = telemetry_module()
+    summaries: list[dict[str, object]] = []
+    telemetry = module.RequestTelemetry(
+        "tool-observation-size",
+        summary_sink=summaries.append,
+    )
+    telemetry.mark_llm_request(history_turns=0)
+
+    telemetry.set_tool_observation_size(chars=7, utf8_bytes=11)
+    for invalid_chars, invalid_bytes in (
+        (True, 11),
+        (7, False),
+        (-1, 11),
+        (7, -1),
+        ("7", 11),
+        (7, 11.0),
+    ):
+        telemetry.set_tool_observation_size(  # type: ignore[arg-type]
+            chars=invalid_chars,
+            utf8_bytes=invalid_bytes,
+        )
+    telemetry.finish(status="success")
+
+    assert summaries[0]["tool_observation_chars"] == 7
+    assert summaries[0]["tool_observation_utf8_bytes"] == 11
+
+
+def test_zero_tool_observation_sizes_are_valid_and_unset_fields_are_absent() -> None:
+    module = telemetry_module()
+    with_size: list[dict[str, object]] = []
+    telemetry = module.RequestTelemetry("zero-size", summary_sink=with_size.append)
+    telemetry.mark_llm_request(history_turns=0)
+    telemetry.set_tool_observation_size(chars=0, utf8_bytes=0)
+    telemetry.finish(status="success")
+
+    without_size: list[dict[str, object]] = []
+    telemetry = module.RequestTelemetry("unset-size", summary_sink=without_size.append)
+    telemetry.mark_llm_request(history_turns=0)
+    telemetry.finish(status="success")
+
+    assert with_size[0]["tool_observation_chars"] == 0
+    assert with_size[0]["tool_observation_utf8_bytes"] == 0
+    assert "tool_observation_chars" not in without_size[0]
+    assert "tool_observation_utf8_bytes" not in without_size[0]
+
+
 def test_agent_chat_and_memory_router_model_telemetry_are_isolated() -> None:
     module = telemetry_module()
     clock = ManualClock()
