@@ -6,15 +6,23 @@ from jarvis_core.__main__ import build_conversation
 from jarvis_core.agent.brain import StructuredAgentDecisionModel
 from jarvis_core.agent.runtime import AgentRuntime
 from jarvis_core.conversation import LLMConversation
+from jarvis_core.llm.config import find_project_root
 from jarvis_core.llm.deepseek import DeepSeekClient, DeepSeekStructuredClient
 from jarvis_core.llm.packycode import PackyCodeResponsesClient
 from jarvis_core.memory_router import SemanticMemoryIntentRouter
 from jarvis_core.memory_store import SQLiteMemoryStore
 from jarvis_core.personality import JARVIS_PERSONALITY_INSTRUCTIONS
 from jarvis_core.runtime_capabilities import CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+from jarvis_core.tools.contracts import ToolCall
+from jarvis_core.tools.filesystem import (
+    GET_METADATA_TOOL_NAME,
+    LIST_DIRECTORY_TOOL_NAME,
+)
+from jarvis_core.tools.runtime_info import RUNTIME_INFO_TOOL_NAME
+from jarvis_core.tools.system_info import OS_INFO_TOOL_NAME
 
 
-def test_production_conversation_uses_deepseek_without_cwd_dependency(
+async def test_production_conversation_uses_deepseek_without_cwd_dependency(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -24,6 +32,7 @@ def test_production_conversation_uses_deepseek_without_cwd_dependency(
     monkeypatch.setenv("DEEPSEEK_THINKING_MODE", "disabled")
     monkeypatch.setenv("JARVIS_CHAT_PROFILE", "chat_default")
     monkeypatch.chdir(tmp_path)
+    (tmp_path / "cwd-only.txt").write_text("wrong root", encoding="utf-8")
     data_dir = tmp_path / "jarvis-data"
 
     conversation = build_conversation(data_dir=data_dir)
@@ -41,6 +50,41 @@ def test_production_conversation_uses_deepseek_without_cwd_dependency(
     assert runtime.brain_profile.name == "agent_brain"
     assert runtime.brain_profile.provider == "deepseek"
     assert runtime.chat_profile.name == "chat_default"
+    assert tuple(definition.name for definition in runtime.registry.definitions()) == (
+        RUNTIME_INFO_TOOL_NAME,
+        OS_INFO_TOOL_NAME,
+        LIST_DIRECTORY_TOOL_NAME,
+        GET_METADATA_TOOL_NAME,
+    )
+    project_root = find_project_root(Path(__file__))
+    assert project_root.is_absolute()
+    root_listing = await runtime.registry.execute(
+        ToolCall(
+            tool_name=LIST_DIRECTORY_TOOL_NAME,
+            arguments={"relative_path": ".", "limit": 100},
+        ),
+        request_id="production-project-root-listing",
+    )
+    project_metadata = await runtime.registry.execute(
+        ToolCall(
+            tool_name=GET_METADATA_TOOL_NAME,
+            arguments={"relative_path": "core/pyproject.toml"},
+        ),
+        request_id="production-project-root-metadata",
+    )
+    assert root_listing.success is True
+    assert root_listing.data is not None
+    listed_names = {entry["name"] for entry in root_listing.data["entries"]}
+    assert "core" in listed_names
+    assert "cwd-only.txt" not in listed_names
+    assert project_metadata.success is True
+    assert project_metadata.data is not None
+    assert project_metadata.data["relative_path"] == "core/pyproject.toml"
+    assert project_metadata.data["exists"] is True
+    assert project_metadata.data["kind"] == "file"
+    assert project_metadata.data["size_bytes"] == (
+        project_root / "core" / "pyproject.toml"
+    ).stat().st_size
     assert conversation.chat_profile.name == "chat_default"
     assert conversation.chat_profile.provider == "deepseek"
     assert conversation.personality_instructions == JARVIS_PERSONALITY_INSTRUCTIONS

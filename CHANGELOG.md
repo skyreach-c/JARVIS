@@ -4,7 +4,28 @@ JARVIS 的重要版本变化记录在这里。详细问题、改进和验收档�
 
 ## [Unreleased]
 
-- 当前没有已批准但尚未封版的功能。
+当前没有已批准但尚未封版的功能。
+
+## [v0.5C] — Capability Runtime Foundation · 2026-08-11 · SEALED
+
+Automated Verification: PASS · Manual Acceptance: PASS
+
+### Added
+
+- v0.5C 在唯一生产 `ToolRegistry` 中按固定顺序注册只读 `system.get_runtime_info`、`system.get_os_info`、`filesystem.list_directory` 与 `filesystem.get_metadata`。
+- 新增 project-root-only `ProjectPathPolicy`，为目录列表和单路径 metadata 提供统一范围、敏感目标与 reparse 检查。
+
+### Fixed
+
+- 将 OS 信息探测移入 worker thread，使 Registry timeout 可以及时 fail closed；已开始的底层调用仍不会被强制终止。
+
+### Security
+
+- 文件系统观察仅限 JARVIS project root 的安全目录名与元数据，不读取文件正文，也不提供写入、删除、命令或应用控制；这些 observation 会发送给实际 Chat Provider，并始终按不可信数据处理。
+
+### Known limitations
+
+- 当前仍没有 Codex、Windows control、Browser、ROS2、通用 PermissionPolicy 或任何副作用能力；路径前后复核不能消除恶意 ABA，`asyncio.to_thread` 超时也不能强制终止已经开始的系统调用。
 
 ## [v0.5B] — SEALED
 

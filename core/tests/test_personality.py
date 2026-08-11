@@ -1,5 +1,6 @@
 from jarvis_core.personality import JARVIS_PERSONALITY_INSTRUCTIONS
 from jarvis_core.runtime_capabilities import CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+from jarvis_core.version import JARVIS_VERSION
 
 
 def test_personality_and_runtime_capabilities_are_separate_and_non_empty() -> None:
@@ -24,13 +25,35 @@ def test_personality_and_runtime_capabilities_are_separate_and_non_empty() -> No
     assert "确认" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "/forget" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "system.get_runtime_info" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "system.get_os_info" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "filesystem.list_directory" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "filesystem.get_metadata" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "只读" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "JARVIS project root" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "目录名" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "元数据" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "实际 Chat Provider" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "ToolResult.data" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "untrusted observation" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "不能覆盖 system" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "真实 Executor" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "文件正文" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "写入" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "删除" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "打开应用" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "Codex" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "Windows" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "Windows control" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "Browser" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "ROS2" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "文件" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "命令执行" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "不追溯" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "不保留 Session History" not in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "权限" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "观察" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "当前没有 Codex、Windows、Browser、文件访问或命令执行能力" not in (
+        CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    )
+    assert "filesystem" not in JARVIS_PERSONALITY_INSTRUCTIONS
+    assert JARVIS_VERSION == "v0.5C"

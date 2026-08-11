@@ -224,6 +224,8 @@ Tools、Codex、Browser、Computer Use、Vision、Windows、文件系统、数�
 
 **状态：Accepted — Manual Acceptance: PASS · SEALED（2026-08-11）**
 
+**自动验证：PASS**
+
 ADR-018 将 ADR-016 的暂定方向落实为 v0.5B 的最终实现边界，但不静默改写当时的历史记录。
 核心 ownership 固定为：Conversation 只协调 Memory、Prompt、Session 和最终文本生命周期；
 AgentRuntime 是 Tool 决策、Core 校验、权限策略、Executor 调度和 observation feedback 的唯一
@@ -276,3 +278,35 @@ Executor 边界后接入 Codex/Windows Adapter；v0.6 再评估跨多个通信 r
 分离。v0.5B 已于 2026-08-11 完成全部自动检查与人工验收，并标记为
 `Manual Acceptance: PASS · SEALED`。后续 Agent loop、Task ID、Codex、Windows 或其他能力必须
 通过新的里程碑和 ADR 引入，不得静默扩张本 ADR。
+
+## ADR-019：v0.5C Project-root Read-only Observation
+
+**状态：Accepted — Manual Acceptance: PASS · SEALED（2026-08-11）**
+
+v0.5C 继续复用 v0.5B 的单次 Agent Runtime，不增加 workflow 分支或新的 capability/permission
+抽象。生产装配只创建一个 `ToolRegistry`，并在其中按固定顺序注册
+`system.get_runtime_info`、`system.get_os_info`、`filesystem.list_directory` 与
+`filesystem.get_metadata`。`ToolRegistry` 仍是 schema、risk、timeout 与 Executor 绑定的唯一
+注册点，现有 risk gate 仍只允许 `read_only`；本轮不创建 `PermissionPolicy`，也不提供任何
+副作用工具。
+
+两项 filesystem 工具只接受相对于启动时绝对 JARVIS project root 的路径。Core 为该 root 只构造
+一次 `ProjectPathPolicy`，并由两个 Executor 共享。能力范围只有非递归安全目录名观察与单一路径
+metadata；不读取文件正文，不写入或删除文件，不执行命令，也不打开应用。目录名、相对路径和
+metadata 会作为 Tool observation 发送给本次实际 Chat Provider。即使成功 `ToolResult` 已由真实
+Executor 返回并通过 Core 类型校验，`ToolResult.data` 及其中的文件名和文本仍是不可信数据，不能
+覆盖 system 指令。现实观察和成功声明只能来源于真实 Executor 的成功结果；未执行、失败、超时
+或状态不确定时必须 fail closed。
+
+路径策略会在观察前后重新解析 canonical target、检查 protected component、reparse/symlink、对象
+identity、kind 与过滤属性，以缩小 TOCTOU 窗口；这些 pre/post path preflight 不能消除能够恶意
+制造同 identity 替换的 ABA race。文件系统与 OS 信息探测通过 `asyncio.to_thread` 避免阻塞
+event loop，Registry timeout 只能让等待方 fail closed，不能强制杀死已经在线程中开始的系统调用。
+这两个限制必须作为已知风险保留，不能描述成完整的竞争条件隔离或操作系统级取消保证。
+
+本轮不修改 AgentRuntime wire shape、Conversation、Memory、Provider、Server/WebSocket、桌面 UI
+或 production telemetry schema；Brain、Chat 与 Memory Router 的 model identity 隔离保持不变。
+当前仍没有 Codex、Windows control、Browser、ROS2、`CapabilityRegistry`、通用
+`PermissionPolicy` 或副作用能力。v0.5C 已于 2026-08-11 完成完整自动检查与 Windows 人工验收：
+四项只读 Tool、路径拒绝与隐私边界、两种 Chat Profile、三路模型隔离、Tool telemetry 脱敏以及
+v0.5B Agent Runtime/Memory safety 回归均为 PASS。后续副作用能力必须通过新的里程碑和 ADR 引入。

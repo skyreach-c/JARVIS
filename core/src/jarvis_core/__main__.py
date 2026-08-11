@@ -53,6 +53,7 @@ def build_conversation(*, data_dir: Path | str | None = None) -> Conversation:
         brain_profile=brain_profile,
         chat_client=chat_client,
         chat_profile=chat_profile,
+        project_root=project_root,
     )
     memory_store = SQLiteMemoryStore(
         resolve_memory_database_path(data_dir=data_dir)

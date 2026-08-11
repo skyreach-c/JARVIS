@@ -164,6 +164,24 @@ from verified executor results.
 - 已知限制：每个请求只有一次 Brain 决策和最多一次 Tool Call；没有 Task ID、长任务、多步 Agent loop、fallback、Codex、Windows Tool、Browser、文件/命令执行或 ROS2。
 - 边界：唯一生产 Tool 是只读 `system.get_runtime_info`；Memory terminal routing、Session ownership、Provider isolation、WebSocket、React 和 Tauri 保持既有语义。后续能力必须进入新版本，不静默扩张 v0.5B。
 
+## JARVIS v0.5C — Capability Runtime Foundation
+
+**状态：Manual Acceptance: PASS · SEALED**
+
+**自动验证：PASS**
+
+- 封版日期：2026-08-11
+- 唯一目标：在 v0.5B 的单次 Agent Runtime 与唯一 `ToolRegistry` 上接入首批现实世界只读观察能力，同时保持 Executor 是现实状态唯一来源。
+- 实现功能：保留 `system.get_runtime_info`，新增 `system.get_os_info`、`filesystem.list_directory` 与 `filesystem.get_metadata`；新增两个 filesystem Executor 共享的 `ProjectPathPolicy`。文件能力只观察 JARVIS project root 内的非递归目录项名称和元数据，不读取正文。
+- 发现问题：只读路径仍可能泄露敏感目标、越过 project root 或遭遇 reparse/TOCTOU 竞争；终审还发现同步 `platform`/`os` 探测会占住 event loop，使 Registry 的 1 秒 timeout 无法及时触发。
+- 根因：`read_only` 只描述副作用风险，不自动提供资源范围和隐私边界；路径字符串 preflight 不是操作系统 handle 授权；同步标准库调用置于 async Executor 内时，事件循环没有机会执行 timeout。
+- 最终改进：以启动时解析的绝对 project root 构造共享路径策略，拒绝绝对路径、`..`、敏感目标、symlink/junction/reparse 和 canonical escape，并在观察前后复核对象；目录结果有固定字段、稳定排序和数量上限；OS 探测改为 `asyncio.to_thread(_read_os_snapshot)`，并用 slow-probe RED/GREEN 回归锁定 timeout 行为。
+- 自动验证：2026-08-11 新鲜运行完整 Python pytest，结果为 628 passed、1 skipped；Ruff、React 7 项测试、React production build、Rust fmt/check、Rust 6 项测试、`scripts/check.ps1` 与 `git diff --check` 全部通过。唯一 skip 是当前 Windows 账户没有创建真实 symlink 的权限，通用 reparse fail-closed 路径由模拟测试覆盖。
+- 人工验收：真实 Windows OS/architecture/logical CPU、project-root 非递归目录列表、文件与缺失路径 metadata、绝对路径/`..`/`.env`/`.git` 拒绝、无正文/写入/删除/命令/Windows Action 能力、两种 Chat Profile、三路模型隔离、Tool telemetry 脱敏及 v0.5B/Memory safety 回归均为 PASS。
+- 安全与数据边界：四项能力全部注册为 `read_only`；受保护目标不泄露存在性或 metadata。目录名、相对路径和有限 metadata 会作为不可信 Tool observation 发送给当前实际 Chat Provider；日志不记录用户路径、目录结果、正文、Key 或 ToolResult payload。成功事实只能来自真实 Executor Result。
+- 已知限制：每个请求仍最多一次 Tool Call；没有 Task ID 或长任务。路径前后复核不能消除恶意本机进程制造的 ABA race；`asyncio.to_thread` timeout 会丢弃迟到结果，但不能强制终止已经开始的系统调用。
+- 边界：没有文件正文读取、写入、删除、命令执行、Windows Action、Codex、Browser、ROS2、任意磁盘访问、`CapabilityRegistry` 或通用 `PermissionPolicy`；AgentRuntime、Conversation、Memory、Provider、WebSocket、React 和 Tauri 保持 v0.5B 语义。
+
 ## 后续封版记录模板
 
 ```markdown
