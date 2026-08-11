@@ -24,6 +24,8 @@ type MemoryRouterAction = Literal[
     "invalid",
     "error",
 ]
+type AgentBrainAction = Literal["respond", "call_tool", "error"]
+type ToolStatus = Literal["success", "error", "rejected"]
 type Summary = dict[str, object]
 type SummarySink = Callable[[Summary], None]
 
@@ -33,6 +35,8 @@ class FailurePhase(StrEnum):
     MEMORY_ROUTER = "memory_router"
     MEMORY_READ = "memory_read"
     PROMPT_BUILD = "prompt_build"
+    AGENT_BRAIN = "agent_brain"
+    TOOL_EXECUTION = "tool_execution"
     PROVIDER_BEFORE_FIRST_TOKEN = "provider_before_first_token"
     PROVIDER_STREAM = "provider_stream"
     REQUEST_HANDLING = "request_handling"
@@ -67,6 +71,9 @@ class RequestTelemetry:
         self._memory_router_profile: str | None = None
         self._memory_router_provider: str | None = None
         self._memory_router_model: str | None = None
+        self._agent_brain_profile: str | None = None
+        self._agent_brain_provider: str | None = None
+        self._agent_brain_model: str | None = None
         self._failure_phase: FailurePhase | None = None
         self._emitted = False
 
@@ -75,6 +82,13 @@ class RequestTelemetry:
         self._memory_operation_ms: float | None = None
         self._memory_router_ms: float | None = None
         self._memory_router_action: MemoryRouterAction | None = None
+        self._agent_brain_decision_ms: float | None = None
+        self._agent_brain_action: AgentBrainAction | None = None
+        self._tool_call_count = 0
+        self._tool_name: str | None = None
+        self._tool_risk_level: str | None = None
+        self._tool_status: ToolStatus | None = None
+        self._tool_execution_ms: float | None = None
         self._provider_first_token_ms: float | None = None
         self._provider_stream_ms: float | None = None
         self._total_llm_ms: float | None = None
@@ -91,16 +105,11 @@ class RequestTelemetry:
         self,
         *,
         history_turns: int,
-        profile: ModelProfile | None = None,
     ) -> None:
         if self.is_noop:
             return
         self._request_kind = "llm"
         self._history_turns = history_turns
-        if profile is not None:
-            self._profile = profile.name
-            self._provider = profile.provider
-            self._model = profile.model
 
     def mark_memory_command(self, command: str) -> None:
         if self.is_noop:
@@ -143,7 +152,66 @@ class RequestTelemetry:
                 setattr(self, f"_{field}", elapsed)
 
     def start_provider(self) -> float | None:
+        return self.start_chat()
+
+    def start_chat(
+        self,
+        *,
+        profile: ModelProfile | None = None,
+    ) -> float | None:
+        if not self.is_noop and profile is not None:
+            self._profile = profile.name
+            self._provider = profile.provider
+            self._model = profile.model
         return self._now()
+
+    def start_agent_brain(
+        self,
+        *,
+        profile: ModelProfile | None = None,
+    ) -> float | None:
+        if not self.is_noop and profile is not None:
+            self._agent_brain_profile = profile.name
+            self._agent_brain_provider = profile.provider
+            self._agent_brain_model = profile.model
+        return self._now()
+
+    def finish_agent_brain(
+        self,
+        started_at: float | None,
+        *,
+        action: AgentBrainAction,
+    ) -> None:
+        if self.is_noop:
+            return
+        self._agent_brain_decision_ms = self._elapsed_ms(
+            started_at,
+            self._now(),
+        )
+        self._agent_brain_action = action
+
+    def start_tool(
+        self,
+        *,
+        tool_name: str,
+        risk_level: str | None,
+    ) -> float | None:
+        if not self.is_noop:
+            self._tool_call_count += 1
+            self._tool_name = tool_name
+            self._tool_risk_level = risk_level
+        return self._now()
+
+    def finish_tool(
+        self,
+        started_at: float | None,
+        *,
+        status: ToolStatus,
+    ) -> None:
+        if self.is_noop:
+            return
+        self._tool_execution_ms = self._elapsed_ms(started_at, self._now())
+        self._tool_status = status
 
     def start_memory_router(
         self,
@@ -168,6 +236,9 @@ class RequestTelemetry:
         self._memory_router_action = action
 
     def record_provider_first_token(self, provider_started_at: float | None) -> None:
+        self.record_chat_first_token(provider_started_at)
+
+    def record_chat_first_token(self, provider_started_at: float | None) -> None:
         if self.is_noop or self._provider_first_token_seen:
             return
         self._provider_first_token_seen = True
@@ -178,6 +249,9 @@ class RequestTelemetry:
         )
 
     def finish_provider(self, provider_started_at: float | None) -> None:
+        self.finish_chat(provider_started_at)
+
+    def finish_chat(self, provider_started_at: float | None) -> None:
         if self.is_noop:
             return
         finished_at = self._now()
@@ -189,7 +263,10 @@ class RequestTelemetry:
             )
 
     def fail_provider(self, provider_started_at: float | None) -> None:
-        self.finish_provider(provider_started_at)
+        self.fail_chat(provider_started_at)
+
+    def fail_chat(self, provider_started_at: float | None) -> None:
+        self.finish_chat(provider_started_at)
         if self._provider_first_token_seen:
             self.mark_failure(FailurePhase.PROVIDER_STREAM)
         else:
@@ -240,6 +317,9 @@ class RequestTelemetry:
                     "provider_first_token_ms": self._provider_first_token_ms,
                     "provider_stream_ms": self._provider_stream_ms,
                     "total_llm_ms": self._total_llm_ms,
+                    "chat_first_token_ms": self._provider_first_token_ms,
+                    "chat_stream_ms": self._provider_stream_ms,
+                    "chat_total_ms": self._total_llm_ms,
                     "first_delta_ms": self._first_delta_ms,
                     "total_request_ms": total_request_ms,
                     "history_turns": self._history_turns,
@@ -251,9 +331,37 @@ class RequestTelemetry:
             if self._profile is not None:
                 summary.update(
                     {
+                        "chat_profile": self._profile,
+                        "chat_provider": self._provider,
+                        "chat_model": self._model,
                         "profile": self._profile,
                         "provider": self._provider,
                         "model": self._model,
+                    }
+                )
+            if self._agent_brain_profile is not None:
+                summary.update(
+                    {
+                        "agent_brain_profile": self._agent_brain_profile,
+                        "agent_brain_provider": self._agent_brain_provider,
+                        "agent_brain_model": self._agent_brain_model,
+                    }
+                )
+            if self._agent_brain_action is not None:
+                summary.update(
+                    {
+                        "agent_brain_decision_ms": self._agent_brain_decision_ms,
+                        "agent_brain_action": self._agent_brain_action,
+                    }
+                )
+            if self._tool_call_count:
+                summary.update(
+                    {
+                        "tool_call_count": self._tool_call_count,
+                        "tool_name": self._tool_name,
+                        "tool_risk_level": self._tool_risk_level,
+                        "tool_status": self._tool_status,
+                        "tool_execution_ms": self._tool_execution_ms,
                     }
                 )
         elif self._request_kind == "memory_command":

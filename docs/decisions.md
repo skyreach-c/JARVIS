@@ -219,3 +219,60 @@ JARVIS 将 [`engineering-reliability.md`](engineering-reliability.md) 作为所�
 Tools、Codex、Browser、Computer Use、Vision、Windows、文件系统、数据库、ROS2、外部程序和
 硬件边界，不绑定某个版本或某一家 Provider。规则只约束工程开发与验收流程；本次决策不修改
 任何 runtime 行为。
+
+## ADR-018：v0.5B Agent Runtime Foundation 最终边界
+
+**状态：Accepted — Manual Acceptance: PASS · SEALED（2026-08-11）**
+
+ADR-018 将 ADR-016 的暂定方向落实为 v0.5B 的最终实现边界，但不静默改写当时的历史记录。
+核心 ownership 固定为：Conversation 只协调 Memory、Prompt、Session 和最终文本生命周期；
+AgentRuntime 是 Tool 决策、Core 校验、权限策略、Executor 调度和 observation feedback 的唯一
+入口；Tool Executor 的真实结果是现实状态的唯一来源。Conversation 不读取 AgentDecision、
+ToolCall、ToolResult、风险级别或参数，也不包含任何具体 Tool workflow 分支。
+
+v0.5B 每个普通请求只进行一次 Agent Brain 决策，最多执行一次 Tool，然后调用一次实际 Chat
+Provider 生成最终回复。Agent Brain 使用 provider-neutral `AgentDecisionModel`，生产默认由独立
+`agent_brain` Profile 装配到 DeepSeek Structured Client；AgentRuntime 不导入 DeepSeek，未来
+可以把 Brain Profile 切换到 `reasoning_strong` 或其他实现而不改 Runtime。Brain 只能输出严格的
+`respond | call_tool` structured proposal，不能访问 Registry、调用 Executor、修改现实状态或
+生成面向用户的执行成功声明。非法 JSON、未知 action、schema 不一致和 Provider 失败全部 fail
+closed，不回退普通 Chat。
+
+`AgentContextBuilder` 是 Brain Context 的唯一构造点。v0.5B 只发送当前用户原文、公开 Tool
+Definitions 及最小 runtime metadata（JARVIS 版本和运行状态）给当前 Agent Brain Provider；
+不发送 Session History、Pinned Memory、Personality 或完整 Chat Prompt。该边界预留未来的
+Task Context、Relevant Memory Retrieval 与 Tool State，但本轮不实现这些数据。普通 Chat 仍由
+Conversation 以 Personality、Runtime Capabilities、Pinned Memory、Session Context 和当前用户
+消息构造，Memory Router 继续使用自身既有的有限数据边界。
+
+Tool Registry 将 ToolDefinition、真实 Pydantic 参数模型、Executor、timeout 与风险等级绑定在
+同一 registration。所有模型输出和 Tool arguments 都是不可信输入；unknown Tool、extra/invalid
+arguments、权限拒绝、timeout 和 Executor exception 均在 Core 内返回安全的失败 ToolResult，
+不会调用未获授权的 Executor。外部取消原样传播。Registry 自身绝不合成 `success=true`；只有
+真实 Executor 返回的合法 ToolResult 可以成为成功 observation。全局不变量继续成立：
+
+```text
+Side-effect success claims MUST originate
+from verified executor results.
+```
+
+v0.5B 唯一生产 Tool 是只读 `system.get_runtime_info`，只接受空 arguments，返回白名单化的
+`jarvis_version/runtime_status/chat_profile/provider/model`。当前 risk policy 只允许 `read_only`；
+没有 Codex、Windows、Browser、文件、命令、应用、ROS2 或其他外部执行能力。Tool observation
+仅供最终 Chat Provider 基于真实结果作答，不进入 committed Session；Session 仍只保存原始 user
+和正常完整结束的最终 assistant。
+
+PERF telemetry 严格分为 `agent_brain_*`、`chat_*`、`memory_router_*` 和 `tool_*` 四个命名空间。
+legacy `profile/provider/model/provider_first_token_ms/provider_stream_ms/total_llm_ms` 只映射实际
+Chat 字段，Brain 和 Memory Router 不得写入。`chat_first_token_ms` 从实际 Chat Provider 开始到
+首个有效文本计算，不包含 Brain 或 Tool；`first_delta_ms` 与 `total_request_ms` 继续覆盖用户感知
+的完整请求生命周期。日志不记录用户文本、Tool arguments/result payload、Prompt、Memory、Key、
+Authorization、Base URL 或原始 Provider 响应。
+
+本轮不实现多 Tool Call、第二次 Brain 决策、Agent loop、Task ID、长任务状态、自动 routing、
+fallback、Codex/Windows Adapter 或通用 Supervisor。Roadmap 候选方向为：v0.5C 在相同 Registry/
+Executor 边界后接入 Codex/Windows Adapter；v0.6 再评估跨多个通信 request 的 Task ID、长期任务
+生命周期、取消/恢复与多步 Agent loop。一次 `request_id` 与未来长期 `task_id` 的概念必须保持
+分离。v0.5B 已于 2026-08-11 完成全部自动检查与人工验收，并标记为
+`Manual Acceptance: PASS · SEALED`。后续 Agent loop、Task ID、Codex、Windows 或其他能力必须
+通过新的里程碑和 ADR 引入，不得静默扩张本 ADR。

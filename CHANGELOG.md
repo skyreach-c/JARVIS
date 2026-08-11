@@ -6,6 +6,24 @@ JARVIS 的重要版本变化记录在这里。详细问题、改进和验收档�
 
 - 当前没有已批准但尚未封版的功能。
 
+## [v0.5B] — SEALED
+
+### Added
+
+- v0.5B Agent Runtime Foundation：新增 provider-neutral Agent Brain、最小 Context Builder、Tool Registry、严格 schema/risk/timeout 校验及单次 Tool 调度。
+- 新增唯一生产 Tool `system.get_runtime_info`，仅返回 JARVIS 版本、运行状态及实际 Chat Profile/Provider/Model。
+- 新增独立 `agent_brain_*`、`chat_*`、`memory_router_*` 与 `tool_*` 脱敏 telemetry。
+
+### Changed
+
+- 普通 Conversation 在 Memory terminal routing 和 Prompt 构建后统一委托 AgentRuntime；Session 仍只提交原始 user 与最终 assistant。
+- Agent Brain 默认使用独立的 DeepSeek `agent_brain` 系统 Profile；Chat Profile 与 Memory Router Profile 保持隔离。
+- Brain 决策失败会 fail closed 为 `agent_runtime_unavailable`，不会回退 Chat 或产生未经 Executor 验证的成功声明。
+
+### Fixed
+
+- Structured Brain 对非法 JSON、未知 action、schema 错误和非有限数值严格 fail closed；成功 observation 只能来自真实 Executor 结果。
+
 ## [v0.5A] — SEALED
 
 ### Added

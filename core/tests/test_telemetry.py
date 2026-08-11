@@ -42,13 +42,19 @@ def test_llm_summary_records_phase_and_user_perceived_timings_once() -> None:
         prompt_chars=420,
     )
 
-    provider_started = telemetry.start_provider()
+    chat_profile = ModelProfile(
+        name="reasoning_strong",
+        provider="packycode",
+        model="gpt-5.6-sol",
+        reasoning_effort="low",
+    )
+    provider_started = telemetry.start_chat(profile=chat_profile)
     clock.value = 0.115
-    telemetry.record_provider_first_token(provider_started)
+    telemetry.record_chat_first_token(provider_started)
     clock.value = 0.120
     telemetry.record_first_delta()
     clock.value = 0.315
-    telemetry.finish_provider(provider_started)
+    telemetry.finish_chat(provider_started)
     clock.value = 0.400
     telemetry.finish(status="success")
     telemetry.finish(status="error")
@@ -63,6 +69,15 @@ def test_llm_summary_records_phase_and_user_perceived_timings_once() -> None:
             "provider_first_token_ms": 100.0,
             "provider_stream_ms": 200.0,
             "total_llm_ms": 300.0,
+            "chat_first_token_ms": 100.0,
+            "chat_stream_ms": 200.0,
+            "chat_total_ms": 300.0,
+            "chat_profile": "reasoning_strong",
+            "chat_provider": "packycode",
+            "chat_model": "gpt-5.6-sol",
+            "profile": "reasoning_strong",
+            "provider": "packycode",
+            "model": "gpt-5.6-sol",
             "first_delta_ms": 120.0,
             "total_request_ms": 400.0,
             "history_turns": 2,
@@ -128,14 +143,14 @@ def test_router_timings_are_optional_and_preserved_on_chat_fallthrough() -> None
     router_started = telemetry.start_memory_router(profile=router_profile)
     clock.value = 0.075
     telemetry.finish_memory_router(router_started, action="chat")
-    telemetry.mark_llm_request(
-        history_turns=0,
+    telemetry.mark_llm_request(history_turns=0)
+    telemetry.start_chat(
         profile=ModelProfile(
             name="reasoning_strong",
             provider="packycode",
             model="gpt-5.6-sol",
             reasoning_effort="low",
-        ),
+        )
     )
     clock.value = 0.100
     telemetry.finish(status="success")
@@ -149,6 +164,9 @@ def test_router_timings_are_optional_and_preserved_on_chat_fallthrough() -> None
     assert summaries[0]["profile"] == "reasoning_strong"
     assert summaries[0]["provider"] == "packycode"
     assert summaries[0]["model"] == "gpt-5.6-sol"
+    assert summaries[0]["chat_profile"] == "reasoning_strong"
+    assert summaries[0]["chat_provider"] == "packycode"
+    assert summaries[0]["chat_model"] == "gpt-5.6-sol"
 
 
 def test_router_failure_action_is_sanitized_without_payload_fields() -> None:
@@ -182,9 +200,9 @@ def test_error_summary_uses_finite_failure_phase_and_unavailable_values() -> Non
         summary_sink=summaries.append,
     )
     telemetry.mark_llm_request(history_turns=0)
-    provider_started = telemetry.start_provider()
+    provider_started = telemetry.start_chat()
     clock.value = 0.125
-    telemetry.fail_provider(provider_started)
+    telemetry.fail_chat(provider_started)
     clock.value = 0.150
     telemetry.finish(status="error")
 
@@ -194,6 +212,9 @@ def test_error_summary_uses_finite_failure_phase_and_unavailable_values() -> Non
     assert summary["provider_first_token_ms"] is None
     assert summary["provider_stream_ms"] is None
     assert summary["total_llm_ms"] == 125.0
+    assert summary["chat_first_token_ms"] is None
+    assert summary["chat_stream_ms"] is None
+    assert summary["chat_total_ms"] == 125.0
     assert summary["first_delta_ms"] is None
 
 
@@ -237,3 +258,110 @@ def test_clock_and_summary_sink_failures_are_best_effort() -> None:
         pass
     telemetry.record_first_delta()
     telemetry.finish(status="success")
+
+
+def test_agent_chat_and_memory_router_model_telemetry_are_isolated() -> None:
+    module = telemetry_module()
+    clock = ManualClock()
+    summaries: list[dict[str, object]] = []
+    telemetry = module.RequestTelemetry(
+        "three-models",
+        clock=clock,
+        summary_sink=summaries.append,
+    )
+    telemetry.mark_llm_request(history_turns=1)
+    router_started = telemetry.start_memory_router(
+        profile=ModelProfile(
+            name="structured_router",
+            provider="deepseek",
+            model="deepseek-v4-flash",
+        )
+    )
+    clock.value = 0.010
+    telemetry.finish_memory_router(router_started, action="chat")
+    brain_started = telemetry.start_agent_brain(
+        profile=ModelProfile(
+            name="agent_brain",
+            provider="deepseek",
+            model="deepseek-v4-flash",
+        )
+    )
+    clock.value = 0.050
+    telemetry.finish_agent_brain(brain_started, action="call_tool")
+    tool_started = telemetry.start_tool(
+        tool_name="system.get_runtime_info",
+        risk_level="read_only",
+    )
+    clock.value = 0.060
+    telemetry.finish_tool(tool_started, status="success")
+    chat_started = telemetry.start_chat(
+        profile=ModelProfile(
+            name="reasoning_strong",
+            provider="packycode",
+            model="gpt-5.6-sol",
+            reasoning_effort="low",
+        )
+    )
+    clock.value = 0.090
+    telemetry.record_chat_first_token(chat_started)
+    clock.value = 0.140
+    telemetry.finish_chat(chat_started)
+    telemetry.finish(status="success")
+
+    summary = summaries[0]
+    assert summary["agent_brain_decision_ms"] == 40.0
+    assert summary["agent_brain_action"] == "call_tool"
+    assert summary["agent_brain_profile"] == "agent_brain"
+    assert summary["agent_brain_provider"] == "deepseek"
+    assert summary["agent_brain_model"] == "deepseek-v4-flash"
+    assert summary["chat_first_token_ms"] == 30.0
+    assert summary["chat_stream_ms"] == 50.0
+    assert summary["chat_total_ms"] == 80.0
+    assert summary["chat_profile"] == "reasoning_strong"
+    assert summary["chat_provider"] == "packycode"
+    assert summary["chat_model"] == "gpt-5.6-sol"
+    assert summary["memory_router_profile"] == "structured_router"
+    assert summary["memory_router_provider"] == "deepseek"
+    assert summary["memory_router_model"] == "deepseek-v4-flash"
+    assert summary["tool_call_count"] == 1
+    assert summary["tool_name"] == "system.get_runtime_info"
+    assert summary["tool_risk_level"] == "read_only"
+    assert summary["tool_status"] == "success"
+    assert summary["tool_execution_ms"] == 10.0
+    assert summary["provider"] == summary["chat_provider"] == "packycode"
+    assert summary["profile"] == summary["chat_profile"] == "reasoning_strong"
+    assert summary["model"] == summary["chat_model"] == "gpt-5.6-sol"
+
+
+def test_brain_failure_has_no_chat_or_legacy_identity() -> None:
+    module = telemetry_module()
+    clock = ManualClock()
+    summaries: list[dict[str, object]] = []
+    telemetry = module.RequestTelemetry(
+        "brain-failure",
+        clock=clock,
+        summary_sink=summaries.append,
+    )
+    telemetry.mark_llm_request(history_turns=0)
+    started = telemetry.start_agent_brain(
+        profile=ModelProfile(
+            name="agent_brain",
+            provider="deepseek",
+            model="deepseek-v4-flash",
+        )
+    )
+    clock.value = 0.025
+    telemetry.finish_agent_brain(started, action="error")
+    telemetry.mark_failure(module.FailurePhase.AGENT_BRAIN)
+    telemetry.finish(status="error")
+
+    summary = summaries[0]
+    assert summary["agent_brain_action"] == "error"
+    assert summary["agent_brain_provider"] == "deepseek"
+    assert "chat_profile" not in summary
+    assert "chat_provider" not in summary
+    assert "chat_model" not in summary
+    assert "profile" not in summary
+    assert "provider" not in summary
+    assert "model" not in summary
+    assert summary["failure_phase"] == "agent_brain"

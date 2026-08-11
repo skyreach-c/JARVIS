@@ -148,6 +148,22 @@ from verified executor results.
 - 已知限制：第三方 Provider 的底层实际模型无法由 Core 加密验证；Profile 只能在启动时静态选择；没有自动 Model Router、fallback、并行回答、模型投票或 UI 切换。
 - 边界：不修改 Memory、Session、WebSocket、React 或 Tauri；不实现 Agent Runtime、Supervisor、Codex/Windows Tools 或 provider-side conversation state。
 
+## v0.5B — Agent Runtime Foundation
+
+**状态：Manual Acceptance: PASS · SEALED**
+
+- 封版日期：2026-08-11
+- 唯一目标：建立 provider-neutral Agent Runtime 与外部能力统一调用边界，并用一个只读 Tool 验证决策、校验、执行、观察和最终回复链路。
+- 实现功能：新增 Agent Brain、最小 Agent Context Builder、AgentRuntime、Tool contracts、ToolRegistry 与只读 `system.get_runtime_info`；普通请求完成一次 Brain 决策、最多一次 Tool 执行和一次最终 Chat；Agent Brain、Chat、Memory Router 与 Tool telemetry 分域。
+- 发现问题：开发终审发现 Python `json.loads()` 默认接受 `NaN`、`Infinity` 与数值溢出形成的非有限值，可能削弱 Structured Brain 的严格 fail-closed 边界；同时需要防止未知 action 静默降级、Conversation 吸收 Tool 分支、模型身份污染 legacy Chat telemetry，以及未经 Executor 验证的结果形成成功 observation。
+- 根因：模型输出和 Tool arguments 都是不可信输入；标准库 JSON 默认行为比协议要求宽松；若决策、执行、会话和观测职责混合，既有 Session/Memory 事务语义和现实状态来源会变得不明确。
+- 最终改进：AgentRuntime 独占 Brain 与 Tool 生命周期，Conversation 只协调 Memory、Prompt、Session 和最终文本；Brain 输出执行严格 action/schema/标准 JSON 校验，非法结构全部 fail closed；Registry 将 Pydantic schema、risk、timeout 与 Executor 绑定，且只有真实 Executor 可以返回成功 observation；legacy telemetry 仅映射实际 Chat。
+- 自动验证：2026-08-11 运行完整 `scripts/check.ps1`；Python 471、React 7、Rust 6 项测试通过，Ruff、React production build、Rust fmt/check 与 `git diff --check` 通过。
+- 人工验收：Agent Brain `respond`/`call_tool`、`system.get_runtime_info`、ToolRegistry、Executor、ToolResult、Memory terminal routing、安全回归、三路模型隔离和 telemetry 分域均为 PASS；`chat_default → DeepSeek`、`reasoning_strong → PackyCode/gpt-5.6-sol`、`agent_brain → DeepSeek` 均验证通过。
+- 安全与数据边界：Agent Brain 只接收当前用户消息、公开 Tool Definitions 和最小 runtime metadata；不接收 Session、Pinned Memory、Personality 或完整 Chat Prompt。日志不记录用户文本、Tool payload、Memory、Prompt、密钥、Authorization、Base URL 或原始 Provider 响应。
+- 已知限制：每个请求只有一次 Brain 决策和最多一次 Tool Call；没有 Task ID、长任务、多步 Agent loop、fallback、Codex、Windows Tool、Browser、文件/命令执行或 ROS2。
+- 边界：唯一生产 Tool 是只读 `system.get_runtime_info`；Memory terminal routing、Session ownership、Provider isolation、WebSocket、React 和 Tauri 保持既有语义。后续能力必须进入新版本，不静默扩张 v0.5B。
+
 ## 后续封版记录模板
 
 ```markdown

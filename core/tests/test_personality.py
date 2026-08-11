@@ -23,6 +23,13 @@ def test_personality_and_runtime_capabilities_are_separate_and_non_empty() -> No
     assert "清空全部 Pinned Long-term Memory" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "确认" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "/forget" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "system.get_runtime_info" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "只读" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "Codex" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "Windows" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "Browser" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "文件" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
+    assert "命令执行" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "不追溯" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "不保留 Session History" not in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS
     assert "权限" in CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS

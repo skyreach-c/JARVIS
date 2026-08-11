@@ -14,6 +14,7 @@ type ProfileName = Literal[
     "chat_default",
     "reasoning_strong",
     "structured_router",
+    "agent_brain",
 ]
 type ChatProfileName = Literal["chat_default", "reasoning_strong"]
 type ReasoningEffort = Literal["none", "low", "medium", "high", "xhigh", "max"]
@@ -50,6 +51,11 @@ def build_model_profiles(
             provider="deepseek",
             model=deepseek_model,
         ),
+        "agent_brain": ModelProfile(
+            name="agent_brain",
+            provider="deepseek",
+            model=deepseek_model,
+        ),
     }
 
 
@@ -81,8 +87,13 @@ def create_structured_client(
     *,
     deepseek_settings: DeepSeekSettings,
 ) -> StructuredLLMClient:
-    if profile.name != "structured_router" or profile.provider != "deepseek":
-        raise ValueError("structured_router must use the deepseek provider")
+    if (
+        profile.name not in {"structured_router", "agent_brain"}
+        or profile.provider != "deepseek"
+    ):
+        raise ValueError(
+            "structured_router and agent_brain must use the deepseek provider"
+        )
     from jarvis_core.llm.deepseek import DeepSeekStructuredClient
 
     return DeepSeekStructuredClient(deepseek_settings)

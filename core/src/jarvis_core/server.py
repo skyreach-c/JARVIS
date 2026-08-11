@@ -5,12 +5,14 @@ from typing import TextIO
 
 from websockets.asyncio.server import Server, ServerConnection, serve
 
+from jarvis_core.agent.contracts import AgentRuntimeError
 from jarvis_core.conversation import Conversation
 from jarvis_core.llm.client import LLMError
 from jarvis_core.memory_store import MemoryStoreError
 from jarvis_core.protocol import ProtocolError, build_server_message, parse_client_message
 from jarvis_core.state import JarvisState, JarvisStateMachine
 from jarvis_core.telemetry import (
+    FailurePhase,
     RequestTelemetry,
     bind_request_telemetry,
     reset_request_telemetry,
@@ -227,6 +229,29 @@ class JarvisCoreServer:
                         "code": exc.code,
                         "message": exc.user_message,
                         "retryable": exc.retryable,
+                    },
+                    request_id=request_id,
+                ),
+            )
+        except AgentRuntimeError as exc:
+            telemetry.mark_failure(FailurePhase.AGENT_BRAIN)
+            logger.error(
+                "Agent runtime failed request_id=%s stage=%s code=%s error_type=%s",
+                request_id,
+                exc.stage,
+                exc.code,
+                exc.error_type,
+            )
+            await self._send_best_effort(
+                websocket,
+                build_server_message(
+                    "error",
+                    {
+                        "code": "agent_runtime_unavailable",
+                        "message": (
+                            "JARVIS 的能力决策暂时不可用，本次没有执行任何工具。"
+                        ),
+                        "retryable": True,
                     },
                     request_id=request_id,
                 ),

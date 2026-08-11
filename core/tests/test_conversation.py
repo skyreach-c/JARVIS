@@ -1,3 +1,4 @@
+import ast
 import asyncio
 from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
@@ -20,6 +21,7 @@ from jarvis_core.memory_store import (
 from jarvis_core.telemetry import (
     RequestTelemetry,
     bind_request_telemetry,
+    current_request_telemetry,
     reset_request_telemetry,
 )
 
@@ -260,6 +262,43 @@ class TimedFailingLLMClient:
         raise RuntimeError("provider failed")
 
 
+class PassthroughAgentRuntime:
+    def __init__(
+        self,
+        client: LLMClient,
+        *,
+        chat_profile: ModelProfile | None = None,
+    ) -> None:
+        self.client = client
+        self.chat_profile = chat_profile
+        self.calls: list[
+            tuple[tuple[ChatMessage, ...], str, str]
+        ] = []
+
+    async def stream_response(
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        current_user_message: str,
+        request_id: str,
+    ) -> AsyncIterator[str]:
+        self.calls.append(
+            (snapshot_messages(messages), current_user_message, request_id)
+        )
+        telemetry = current_request_telemetry()
+        started_at = telemetry.start_chat(profile=self.chat_profile)
+        try:
+            async for chunk in self.client.stream_chat(messages):
+                if isinstance(chunk, str) and chunk:
+                    telemetry.record_chat_first_token(started_at)
+                yield chunk
+        except BaseException:
+            telemetry.fail_chat(started_at)
+            raise
+        else:
+            telemetry.finish_chat(started_at)
+
+
 def make_conversation(
     client: LLMClient,
     *,
@@ -270,7 +309,7 @@ def make_conversation(
     router_profile: ModelProfile | None = None,
 ) -> LLMConversation:
     return LLMConversation(
-        client,
+        PassthroughAgentRuntime(client, chat_profile=chat_profile),
         personality_instructions="PERSONALITY_SENTINEL",
         capability_constraints="CAPABILITY_SENTINEL",
         memory_store=memory_store or InMemoryStore(),
@@ -377,7 +416,7 @@ def test_max_session_turns_must_be_a_positive_integer(
 
     with pytest.raises(ValueError, match="positive integer"):
         LLMConversation(
-            client,
+            PassthroughAgentRuntime(client),
             personality_instructions="personality",
             capability_constraints="capabilities",
             memory_store=InMemoryStore(),
@@ -386,6 +425,49 @@ def test_max_session_turns_must_be_a_positive_integer(
         )
 
     assert client.calls == []
+
+
+async def test_conversation_delegates_prompt_and_final_stream_to_agent_runtime() -> None:
+    client = RecordingLLMClient([["final answer"]])
+    runtime = PassthroughAgentRuntime(client)
+    conversation = LLMConversation(
+        runtime,
+        personality_instructions="personality",
+        capability_constraints="capabilities",
+        memory_store=InMemoryStore(),
+        memory_router=RecordingMemoryRouter(),
+    )
+
+    chunks = await collect_reply(conversation, "exact current user")
+
+    assert chunks == ["final answer"]
+    assert len(runtime.calls) == 1
+    messages, current_user_message, request_id = runtime.calls[0]
+    assert messages[-1] == {"role": "user", "content": "exact current user"}
+    assert current_user_message == "exact current user"
+    assert request_id == ""
+
+
+def test_conversation_source_has_no_agent_decision_or_tool_branching() -> None:
+    module_path = (
+        Path(__file__).parents[1]
+        / "src"
+        / "jarvis_core"
+        / "conversation.py"
+    )
+    source = module_path.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    imported_modules = {
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+    }
+
+    assert "jarvis_core.tools.contracts" not in imported_modules
+    assert "jarvis_core.tools.registry" not in imported_modules
+    assert "jarvis_core.agent.contracts" not in imported_modules
+    assert "decision.action" not in source
+    assert "tool_name" not in source
 
 
 async def test_history_limit_removes_only_the_oldest_complete_turn() -> None:
@@ -676,6 +758,7 @@ async def test_conversation_honors_explicit_terminal_interaction_result() -> Non
 
     assert chunks == ["local terminal reply"]
     assert interaction.calls == 1
+    assert conversation.agent_runtime.calls == []  # type: ignore[attr-defined]
     assert client.calls == []
     assert conversation._history == []
 

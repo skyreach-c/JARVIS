@@ -4,6 +4,7 @@ import os
 import sys
 from pathlib import Path
 
+from jarvis_core.agent.factory import create_agent_response_runtime
 from jarvis_core.conversation import Conversation, LLMConversation
 from jarvis_core.llm.config import find_project_root, load_llm_settings
 from jarvis_core.llm.profiles import (
@@ -33,6 +34,7 @@ def build_conversation(*, data_dir: Path | str | None = None) -> Conversation:
     )
     chat_profile = profiles[settings.chat_profile]
     router_profile = profiles["structured_router"]
+    brain_profile = profiles["agent_brain"]
     chat_client = create_chat_client(
         chat_profile,
         deepseek_settings=settings.deepseek,
@@ -42,11 +44,21 @@ def build_conversation(*, data_dir: Path | str | None = None) -> Conversation:
         router_profile,
         deepseek_settings=settings.deepseek,
     )
+    brain_client = create_structured_client(
+        brain_profile,
+        deepseek_settings=settings.deepseek,
+    )
+    agent_runtime = create_agent_response_runtime(
+        brain_client=brain_client,
+        brain_profile=brain_profile,
+        chat_client=chat_client,
+        chat_profile=chat_profile,
+    )
     memory_store = SQLiteMemoryStore(
         resolve_memory_database_path(data_dir=data_dir)
     )
     return LLMConversation(
-        chat_client,
+        agent_runtime,
         personality_instructions=JARVIS_PERSONALITY_INSTRUCTIONS,
         capability_constraints=CURRENT_RUNTIME_CAPABILITY_CONSTRAINTS,
         memory_store=memory_store,

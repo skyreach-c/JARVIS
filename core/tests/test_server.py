@@ -12,6 +12,7 @@ import pytest
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosedError
 
+from jarvis_core.agent.contracts import AgentRuntimeError
 from jarvis_core.conversation import FakeConversation, LLMConversation
 from jarvis_core.llm.client import LLMError
 from jarvis_core.memory_router import MemoryIntent
@@ -26,6 +27,18 @@ class FailingConversation:
         if False:
             yield ""
         raise RuntimeError("fake provider exploded")
+
+
+class FailingAgentRuntimeConversation:
+    async def stream_reply(self, text: str) -> AsyncIterator[str]:
+        del text
+        if False:
+            yield ""
+        raise AgentRuntimeError(
+            stage="provider",
+            code="agent_brain_unavailable",
+            error_type="ProviderError",
+        )
 
 
 class BlockingConversation:
@@ -94,6 +107,22 @@ class SingleChunkLLMClient:
         yield "visible answer"
 
 
+class PassthroughAgentRuntime:
+    def __init__(self, client):  # type: ignore[no-untyped-def]
+        self.client = client
+
+    async def stream_response(
+        self,
+        messages,
+        *,
+        current_user_message,
+        request_id,
+    ):  # type: ignore[no-untyped-def]
+        del current_user_message, request_id
+        async for chunk in self.client.stream_chat(messages):
+            yield chunk
+
+
 class ChatMemoryRouter:
     async def route(self, request):  # type: ignore[no-untyped-def]
         del request
@@ -119,7 +148,7 @@ class ClearAllMemoryRouter:
 
 def make_llm_conversation(tmp_path: Path) -> LLMConversation:
     return LLMConversation(
-        SingleChunkLLMClient(),
+        PassthroughAgentRuntime(SingleChunkLLMClient()),
         personality_instructions="personality",
         capability_constraints="capabilities",
         memory_store=SQLiteMemoryStore(tmp_path / "memory.db"),
@@ -657,6 +686,46 @@ async def test_llm_failure_is_correlated_user_friendly_and_logged_without_secret
         await server.stop()
 
 
+async def test_agent_brain_failure_is_terminal_before_responding(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.ERROR)
+    server = JarvisCoreServer(
+        auth_token="test-token",
+        conversation=FailingAgentRuntimeConversation(),
+    )
+    websocket = RecordingWebSocket()
+
+    await server._run_chat(  # type: ignore[arg-type]
+        websocket,
+        "agent-failed-request",
+        "private user request",
+    )
+
+    assert [event["type"] for event in websocket.events] == [
+        "state.changed",
+        "error",
+        "state.changed",
+    ]
+    assert websocket.events[0]["payload"] == {"state": "THINKING"}
+    assert websocket.events[1]["payload"] == {
+        "code": "agent_runtime_unavailable",
+        "message": "JARVIS 的能力决策暂时不可用，本次没有执行任何工具。",
+        "retryable": True,
+    }
+    assert websocket.events[2]["payload"] == {"state": "IDLE"}
+    assert all(
+        event["requestId"] == "agent-failed-request"
+        for event in websocket.events
+    )
+    assert "request_id=agent-failed-request" in caplog.text
+    assert "stage=provider" in caplog.text
+    assert "code=agent_brain_unavailable" in caplog.text
+    assert "error_type=ProviderError" in caplog.text
+    assert "private user request" not in caplog.text
+    assert current_request_telemetry().is_noop
+
+
 async def test_memory_failure_before_first_chunk_skips_responding_and_is_sanitized(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -914,7 +983,7 @@ async def test_server_clear_all_requires_confirmation_and_reports_real_count(
     caplog.set_level(logging.INFO, logger="jarvis_core.perf")
     router = ClearAllMemoryRouter()
     conversation = LLMConversation(
-        SingleChunkLLMClient(),
+        PassthroughAgentRuntime(SingleChunkLLMClient()),
         personality_instructions="personality",
         capability_constraints="capabilities",
         memory_store=SQLiteMemoryStore(tmp_path / "memory.db"),
@@ -972,7 +1041,7 @@ async def test_server_clear_all_executor_failure_never_emits_success(
 ) -> None:
     router = ClearAllMemoryRouter()
     conversation = LLMConversation(
-        SingleChunkLLMClient(),
+        PassthroughAgentRuntime(SingleChunkLLMClient()),
         personality_instructions="personality",
         capability_constraints="capabilities",
         memory_store=SQLiteMemoryStore(tmp_path / "memory.db"),

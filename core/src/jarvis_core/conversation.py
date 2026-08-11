@@ -3,7 +3,8 @@ import json
 from collections.abc import AsyncIterator
 from typing import Protocol
 
-from jarvis_core.llm.client import ChatMessage, LLMClient
+from jarvis_core.agent.runtime import AgentResponseRuntime
+from jarvis_core.llm.client import ChatMessage
 from jarvis_core.llm.profiles import ModelProfile
 from jarvis_core.memory_interaction import MemoryInteractionCoordinator
 from jarvis_core.memory_router import MemoryIntentRouter
@@ -20,7 +21,7 @@ class Conversation(Protocol):
 class LLMConversation:
     def __init__(
         self,
-        client: LLMClient,
+        agent_runtime: AgentResponseRuntime,
         *,
         personality_instructions: str,
         capability_constraints: str,
@@ -37,7 +38,7 @@ class LLMConversation:
         ):
             raise ValueError("max_session_turns must be a positive integer")
 
-        self.client = client
+        self.agent_runtime = agent_runtime
         self.personality_instructions = personality_instructions
         self.capability_constraints = capability_constraints
         self.memory_store = memory_store
@@ -67,7 +68,6 @@ class LLMConversation:
 
         telemetry.mark_llm_request(
             history_turns=len(self._history) // 2,
-            profile=self.chat_profile,
         )
         with telemetry.measure_phase(
             "memory_read_ms",
@@ -92,18 +92,13 @@ class LLMConversation:
             )
 
         assistant_chunks: list[str] = []
-        provider_started_at = telemetry.start_provider()
-        try:
-            async for chunk in self.client.stream_chat(messages):
-                if isinstance(chunk, str) and chunk:
-                    telemetry.record_provider_first_token(provider_started_at)
-                assistant_chunks.append(chunk)
-                yield chunk
-        except BaseException:
-            telemetry.fail_provider(provider_started_at)
-            raise
-        else:
-            telemetry.finish_provider(provider_started_at)
+        async for chunk in self.agent_runtime.stream_response(
+            messages,
+            current_user_message=text,
+            request_id=telemetry.request_id,
+        ):
+            assistant_chunks.append(chunk)
+            yield chunk
 
         self._commit_turn(text, "".join(assistant_chunks))
 

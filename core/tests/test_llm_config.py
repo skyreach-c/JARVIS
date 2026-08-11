@@ -140,6 +140,7 @@ def test_llm_settings_allow_environment_profile_overrides(
     ("variable", "value"),
     [
         ("JARVIS_CHAT_PROFILE", "structured_router"),
+        ("JARVIS_CHAT_PROFILE", "agent_brain"),
         ("JARVIS_CHAT_PROFILE", "unknown"),
         ("JARVIS_PROFILE_REASONING_STRONG_EFFORT", "automatic"),
     ],

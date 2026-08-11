@@ -3,6 +3,8 @@ from pathlib import Path
 import pytest
 
 from jarvis_core.__main__ import build_conversation
+from jarvis_core.agent.brain import StructuredAgentDecisionModel
+from jarvis_core.agent.runtime import AgentRuntime
 from jarvis_core.conversation import LLMConversation
 from jarvis_core.llm.deepseek import DeepSeekClient, DeepSeekStructuredClient
 from jarvis_core.llm.packycode import PackyCodeResponsesClient
@@ -27,11 +29,18 @@ def test_production_conversation_uses_deepseek_without_cwd_dependency(
     conversation = build_conversation(data_dir=data_dir)
 
     assert isinstance(conversation, LLMConversation)
-    assert isinstance(conversation.client, DeepSeekClient)
-    assert conversation.client.settings.api_key == "test-key"
-    assert conversation.client.settings.base_url == "https://api.deepseek.com"
-    assert conversation.client.settings.model == "deepseek-v4-flash"
-    assert conversation.client.settings.thinking_mode == "disabled"
+    runtime = conversation.agent_runtime
+    assert isinstance(runtime, AgentRuntime)
+    assert isinstance(runtime.chat_client, DeepSeekClient)
+    assert runtime.chat_client.settings.api_key == "test-key"
+    assert runtime.chat_client.settings.base_url == "https://api.deepseek.com"
+    assert runtime.chat_client.settings.model == "deepseek-v4-flash"
+    assert runtime.chat_client.settings.thinking_mode == "disabled"
+    assert isinstance(runtime.brain, StructuredAgentDecisionModel)
+    assert isinstance(runtime.brain.client, DeepSeekStructuredClient)
+    assert runtime.brain_profile.name == "agent_brain"
+    assert runtime.brain_profile.provider == "deepseek"
+    assert runtime.chat_profile.name == "chat_default"
     assert conversation.chat_profile.name == "chat_default"
     assert conversation.chat_profile.provider == "deepseek"
     assert conversation.personality_instructions == JARVIS_PERSONALITY_INSTRUCTIONS
@@ -41,7 +50,9 @@ def test_production_conversation_uses_deepseek_without_cwd_dependency(
     router = conversation.memory_interaction.router
     assert isinstance(router, SemanticMemoryIntentRouter)
     assert isinstance(router.client, DeepSeekStructuredClient)
-    assert router.client.settings is conversation.client.settings
+    assert router.client is not runtime.brain.client
+    assert router.client.settings is runtime.chat_client.settings
+    assert runtime.brain.client.settings is runtime.chat_client.settings
     assert conversation.memory_interaction.router_profile.name == "structured_router"
     assert conversation.memory_interaction.router_profile.provider == "deepseek"
 
@@ -67,10 +78,17 @@ def test_production_conversation_can_select_packycode_without_moving_router(
     conversation = build_conversation(data_dir=tmp_path / "jarvis-data")
 
     assert isinstance(conversation, LLMConversation)
-    assert isinstance(conversation.client, PackyCodeResponsesClient)
-    assert conversation.client.settings.api_key == "packycode-key"
-    assert conversation.client.model == "gpt-5.6-sol"
-    assert conversation.client.reasoning_effort == "low"
+    runtime = conversation.agent_runtime
+    assert isinstance(runtime, AgentRuntime)
+    assert isinstance(runtime.chat_client, PackyCodeResponsesClient)
+    assert runtime.chat_client.settings.api_key == "packycode-key"
+    assert runtime.chat_client.model == "gpt-5.6-sol"
+    assert runtime.chat_client.reasoning_effort == "low"
+    assert isinstance(runtime.brain, StructuredAgentDecisionModel)
+    assert isinstance(runtime.brain.client, DeepSeekStructuredClient)
+    assert runtime.brain_profile.name == "agent_brain"
+    assert runtime.brain_profile.provider == "deepseek"
+    assert runtime.chat_profile.name == "reasoning_strong"
     assert conversation.chat_profile.name == "reasoning_strong"
     assert conversation.chat_profile.provider == "packycode"
     router = conversation.memory_interaction.router
@@ -78,5 +96,8 @@ def test_production_conversation_can_select_packycode_without_moving_router(
     assert isinstance(router.client, DeepSeekStructuredClient)
     assert router.client.settings.api_key == "deepseek-key"
     assert router.client.settings.model == "deepseek-v4-flash"
+    assert router.client is not runtime.brain.client
+    assert runtime.brain.client.settings.api_key == "deepseek-key"
+    assert runtime.brain.client.settings.model == "deepseek-v4-flash"
     assert conversation.memory_interaction.router_profile.name == "structured_router"
     assert conversation.memory_interaction.router_profile.provider == "deepseek"
