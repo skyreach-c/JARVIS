@@ -310,3 +310,11 @@ event loop，Registry timeout 只能让等待方 fail closed，不能强制杀�
 `PermissionPolicy` 或副作用能力。v0.5C 已于 2026-08-11 完成完整自动检查与 Windows 人工验收：
 四项只读 Tool、路径拒绝与隐私边界、两种 Chat Profile、三路模型隔离、Tool telemetry 脱敏以及
 v0.5B Agent Runtime/Memory safety 回归均为 PASS。后续副作用能力必须通过新的里程碑和 ADR 引入。
+
+## ADR-020：采用 JARVIS Master Roadmap
+
+**状态：Accepted（2026-08-11）**
+
+JARVIS 采用 `docs/master-roadmap.md` 作为长期技术方向。各里程碑可以细化实现细节，但不得静默改变总体架构；方向变化必须显式更新 Master Roadmap，并通过新的 ADR 记录。当前已封版行为仍以对应 ADR 与里程碑档案为准，Master Roadmap 不反向覆盖 sealed semantics。
+
+本 ADR 只取代旧 ADR 中非约束性的未来候选版本顺序，不修改任何已封版 runtime 行为。新的顺序先完成只读 Workspace Knowledge，再建立 Task Runtime 与 Governance，随后才接入 Codex 等副作用 Specialist；原因是长任务标识、预算、取消、权限、隔离 worktree 和执行证据必须先于 Codex 副作用能力成为 Core 的明确治理边界。
