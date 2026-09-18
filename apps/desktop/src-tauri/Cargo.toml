@@ -3,6 +3,7 @@ name = "jarvis-desktop"
 version = "0.1.0"
 description = "JARVIS desktop heartbeat"
 authors = ["JARVIS"]
+license = "MIT"
 edition = "2021"
 
 [lib]

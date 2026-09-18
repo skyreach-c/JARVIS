@@ -4,6 +4,10 @@ JARVIS 的重要版本变化记录在这里。详细问题、改进和验收档�
 
 ## [Unreleased]
 
+### Changed
+
+- 仓库新增 MIT 许可证（根目录 `LICENSE`、README 许可证章节，以及 Python/Rust/Node 元数据的 `license` 字段），项目由“公开可见、保留所有权利”转为正式开源。
+
 ### Status
 
 - 当前没有已批准但尚未封版的功能。

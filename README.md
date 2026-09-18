@@ -29,3 +29,7 @@ JARVIS 是一个由 Tauri/React 桌面端和 Python Core 组成的本机个人 A
 ## 版本记录
 
 每个里程碑在人工验收后都会更新版本总账和 Changelog。已封版版本的详细人工验收场景、已知限制和安全边界以 `docs/milestones.md` 为准。
+
+## 许可证
+
+本项目基于 [MIT License](LICENSE) 开源，Copyright (c) 2026 skyreach-c。

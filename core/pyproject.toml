@@ -7,6 +7,7 @@ name = "jarvis-core"
 version = "0.1.0"
 description = "Local Python core for the JARVIS heartbeat"
 requires-python = ">=3.14"
+license = "MIT"
 dependencies = [
     "openai>=2,<3",
     "pydantic>=2.12,<3",
